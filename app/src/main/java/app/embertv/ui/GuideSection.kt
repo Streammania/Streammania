@@ -58,6 +58,9 @@ import app.embertv.data.Repository
 import app.embertv.data.catchupAvailable
 import app.embertv.data.toChannel
 import kotlinx.coroutines.delay
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.runtime.LaunchedEffect
 
 /** How much of the day is on screen at once: two and a half hours, like TiviMate. */
 internal const val WINDOW_MINUTES = 150
