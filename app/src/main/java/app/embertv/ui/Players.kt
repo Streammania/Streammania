@@ -1778,7 +1778,13 @@ fun VodPlayerScreen(vm: AppViewModel, items: List<VodItem>, startIndex: Int, sta
     // TVs: ▲ from the pause buttons picks up the progress bar, Apple TV style. ◀▶ move a marker along
     // it (faster the longer you hold), OK jumps there, ▼ or BACK puts it down without moving.
     var barFocused by remember { mutableStateOf(false) }
-    LaunchedEffect(controlsOpen) { if (!controlsOpen) barFocused = false }
+    LaunchedEffect(controlsOpen) {
+        // The buttons tucked away while the bar was picked up: put the marker down too.
+        if (!controlsOpen && barFocused) {
+            barFocused = false
+            scrub = null
+        }
+    }
     var scoresOpen by remember { mutableStateOf(false) }
     val controlsFocus = remember { FocusRequester() }
     // What this film or episode offers, so the pause buttons only show what's there.
@@ -1788,6 +1794,9 @@ fun VodPlayerScreen(vm: AppViewModel, items: List<VodItem>, startIndex: Int, sta
     fun showOverlay() {
         overlayVisible = true
         overlayToken++
+        // The time on screen is only kept up to date while shown, so catch it up straight away.
+        position = exo.currentPosition
+        duration = exo.duration.coerceAtLeast(0L)
     }
 
     fun openControls() {

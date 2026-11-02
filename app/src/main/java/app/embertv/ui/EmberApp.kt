@@ -345,6 +345,19 @@ private fun UpdateDialog(vm: AppViewModel) {
 /** The page for [screen]. */
 @Composable
 private fun Screens(vm: AppViewModel, isTv: Boolean, screen: Screen) {
+    // A new page starts fresh, even in the same place as the last one (one channel list swapped for
+    // another, one film's page for another's). Zapping within a list only changes the index, so the
+    // player itself carries on.
+    val identity: Any = when (screen) {
+        is Screen.PlayLive -> System.identityHashCode(screen.channels)
+        is Screen.PlayVod -> System.identityHashCode(screen.items)
+        else -> screen
+    }
+    androidx.compose.runtime.key(screen::class, identity) { ScreenFor(vm, isTv, screen) }
+}
+
+@Composable
+private fun ScreenFor(vm: AppViewModel, isTv: Boolean, screen: Screen) {
     when (screen) {
         Screen.Home -> if (isTv) HomeScreen(vm) else PhoneHome(vm)
         is Screen.MovieDetail -> if (isTv) MovieDetailScreen(vm, screen.movie) else PhoneMovieDetail(vm, screen.movie)
