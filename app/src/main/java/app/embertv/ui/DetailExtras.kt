@@ -2,6 +2,7 @@ package app.embertv.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Box
@@ -64,17 +65,19 @@ fun CastRow(cast: List<CastMember>, edge: Dp) {
                         focusedColor = Ember.Card,
                         onFocusChange = { focused = it },
                         onClick = { if (p.id > 0) picked = p },
-                    ) { _ ->
+                    ) { f ->
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(initials(p.name), style = Txt.Headline, color = Ember.Dim)
                         }
                         NetImage(p.photo, Modifier.fillMaxSize())
+                        // Apple style: the picked face gets a white ring.
+                        if (f) Box(Modifier.fillMaxSize().border(3.dp, Color.White, CircleShape))
                     }
                     Spacer(Modifier.height(8.dp))
                     Text(
                         p.name,
-                        style = Txt.Caption,
-                        color = if (focused) Ember.Text else Ember.Dim,
+                        style = Txt.Caption.copy(fontWeight = if (focused) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Medium),
+                        color = if (focused || !isTv) Ember.Text else Ember.Dim,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center,
@@ -106,24 +109,42 @@ private fun ActorSheet(vm: AppViewModel, person: CastMember, onDismiss: () -> Un
                 .padding(vertical = if (isTv) 10.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(Modifier.size(if (isTv) 96.dp else 80.dp).glassSurface(CircleShape, Ember.Card), contentAlignment = Alignment.Center) {
-                Text(initials(person.name), style = Txt.Headline, color = Ember.Dim)
-                NetImage(person.photo, Modifier.fillMaxSize().clip(CircleShape))
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(person.name, style = Txt.Title, textAlign = TextAlign.Center)
-            Text("In your films and series", style = Txt.Caption, color = Ember.Dim)
-            Spacer(Modifier.height(16.dp))
             val f = found
+            Box(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    // Their photo in a frosted ring, like the app's other round pictures.
+                    Box(
+                        Modifier.size(if (isTv) 104.dp else 84.dp).glassSurface(CircleShape, Color(0x1FFFFFFF)).padding(4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(Modifier.fillMaxSize().clip(CircleShape).background(Ember.Card), contentAlignment = Alignment.Center) {
+                            Text(initials(person.name), style = Txt.Headline, color = Ember.Dim)
+                            NetImage(person.photo, Modifier.fillMaxSize())
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    SheetTitle(
+                        person.name,
+                        subtitle = when {
+                            f == null -> "Looking through your films and series…"
+                            else -> listOfNotNull(
+                                f.first.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "film" else "films"}" },
+                                f.second.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "series" else "series"}" },
+                            ).joinToString(" · ").ifEmpty { "Not in anything else you have" }
+                        },
+                    )
+                }
+                // Phones: a round close button in the corner, like the app's other sheets.
+                if (!isTv) IconCircleButton(
+                    EmberIcons.Close, "Close",
+                    Modifier.align(Alignment.TopEnd).padding(end = 14.dp),
+                    size = 32.dp, background = Color(0x1FFFFFFF), glass = true, onClick = onDismiss,
+                )
+            }
+            Spacer(Modifier.height(16.dp))
             when {
                 f == null -> SkeletonPosters(Modifier.height(if (isTv) 230.dp else 200.dp).padding(horizontal = 20.dp), minSize = if (isTv) 120.dp else 96.dp)
-                f.first.isEmpty() && f.second.isEmpty() -> Text(
-                    "Nothing else with ${person.name} in your lists.",
-                    style = Txt.Body,
-                    color = Ember.Dim,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
-                )
+                f.first.isEmpty() && f.second.isEmpty() -> Spacer(Modifier.height(4.dp))
                 else -> androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = if (isTv) 440.dp else 480.dp)) {
                     if (f.first.isNotEmpty()) item(key = "films") {
                         Column {
@@ -167,10 +188,7 @@ private fun ActorSheet(vm: AppViewModel, person: CastMember, onDismiss: () -> Un
                     }
                 }
             }
-            if (!isTv) {
-                Spacer(Modifier.height(10.dp))
-                PillButton("Close", Modifier.padding(horizontal = 20.dp).fillMaxWidth(), onClick = onDismiss)
-            } else {
+            if (isTv) {
                 Spacer(Modifier.height(8.dp))
                 RemoteHints(listOf(Hint("OK", "Open"), Hint("BACK", "Close")))
             }
