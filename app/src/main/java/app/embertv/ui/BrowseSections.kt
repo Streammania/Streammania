@@ -220,7 +220,7 @@ private fun MovieShelf(vm: AppViewModel, title: String, movies: List<Movie>, key
                     title = m.name,
                     image = m.poster,
                     focusKey = "$keyPrefix:mv:${m.streamId}",
-                    modifier = Modifier.width(140.dp),
+                    modifier = Modifier.width(if (LocalIsTv.current) 140.dp else 118.dp),
                     badge = badgeText(m.qualities()),
                     favourite = vm.favKeys.contains(favouriteKey(ContentType.MOVIE, m.streamId)),
                     onClick = { vm.push(Screen.MovieDetail(m)) },
@@ -244,7 +244,7 @@ private fun SeriesShelf(vm: AppViewModel, title: String, series: List<Series>, k
                     title = s.name,
                     image = s.cover,
                     focusKey = "$keyPrefix:sr:${s.seriesId}",
-                    modifier = Modifier.width(140.dp),
+                    modifier = Modifier.width(if (LocalIsTv.current) 140.dp else 118.dp),
                     badge = badgeText(s.qualities()),
                     favourite = vm.favKeys.contains(favouriteKey(ContentType.SERIES, s.seriesId)),
                     onClick = { vm.push(Screen.SeriesDetail(s)) },
@@ -841,8 +841,8 @@ private fun SettingRow(title: String, value: String, hint: String?, focusKey: St
         },
         focusKey = focusKey,
         focusedScale = 1.03f,
-        // Rows sit on their group's frosted panel, so each is only faintly tinted.
-        color = Color(0x08FFFFFF),
+        // Rows sit on their group's frosted panel, so each is only faintly tinted (not at all on phones, like iOS).
+        color = if (isTv) Color(0x08FFFFFF) else Color.Transparent,
         focusedColor = Color.White,
         glassEdge = false,
         shape = RoundedCornerShape(16.dp),
@@ -861,17 +861,22 @@ private fun SettingRow(title: String, value: String, hint: String?, focusKey: St
                 }
             }
         } else {
-            // Phones are narrow, so the current value goes under the title instead of beside it.
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text(title, style = Txt.Label, color = Ember.Text)
+            // iOS Settings: the title on the left, its value in grey on the right with a chevron,
+            // and the explanation small underneath.
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = Txt.Label.copy(fontWeight = FontWeight.Medium), color = Ember.Text)
+                    if (hint != null) {
+                        Spacer(Modifier.height(2.dp))
+                        Text(hint, style = Txt.Caption, color = Ember.Faint)
+                    }
+                }
                 if (value.isNotEmpty()) {
-                    Spacer(Modifier.height(2.dp))
-                    Text(value, style = Txt.Label.copy(fontSize = Txt.Caption.fontSize), color = Ember.Dim)
+                    Spacer(Modifier.width(10.dp))
+                    Text(value, style = Txt.Label.copy(fontSize = 15.sp), color = Ember.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 150.dp))
                 }
-                if (hint != null) {
-                    Spacer(Modifier.height(2.dp))
-                    Text(hint, style = Txt.Caption, color = Ember.Faint)
-                }
+                Spacer(Modifier.width(4.dp))
+                androidx.compose.material3.Icon(EmberIcons.ChevronRight, contentDescription = null, tint = Ember.Faint, modifier = Modifier.size(16.dp))
             }
         }
     }

@@ -156,7 +156,12 @@ fun PhoneLiveTab(vm: AppViewModel) {
 // ---------------- Guide ----------------
 
 // Roomier than before, so titles fit: half an hour is 150dp wide.
-private val P_CHANNEL = 112.dp
+private val P_CHANNEL_UPRIGHT = 112.dp
+private val P_CHANNEL_SIDEWAYS = 92.dp
+
+/** The channel column: a little narrower sideways, so more of the timeline shows. */
+private val P_CHANNEL: androidx.compose.ui.unit.Dp
+    @Composable get() = if (androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) P_CHANNEL_SIDEWAYS else P_CHANNEL_UPRIGHT
 private val P_ROW = 64.dp
 private val P_PER_MINUTE = 5.dp
 private const val P_DAY_MINUTES = 24 * 60

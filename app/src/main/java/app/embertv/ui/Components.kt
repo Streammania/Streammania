@@ -520,7 +520,14 @@ fun ProgressBar(fraction: Float, modifier: Modifier = Modifier, color: Color = E
 
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
-    Text(text, style = Txt.Headline, color = Ember.Text, modifier = modifier.padding(bottom = 14.dp))
+    // Phones: Apple's bold section titles, the same as Home's rows.
+    val phone = !LocalIsTv.current
+    Text(
+        text,
+        style = if (phone) Txt.Headline.copy(fontSize = (20f * Txt.scale).sp, fontWeight = FontWeight.Bold) else Txt.Headline,
+        color = Ember.Text,
+        modifier = modifier.padding(bottom = if (phone) 8.dp else 14.dp),
+    )
 }
 
 // ---------- Category rail ----------

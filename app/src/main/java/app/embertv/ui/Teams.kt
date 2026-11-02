@@ -331,8 +331,11 @@ fun MatchFinderDialog(vm: AppViewModel, match: Match) {
     var checked by remember(match.id) { mutableIntStateOf(0) }
     var total by remember(match.id) { mutableIntStateOf(0) }
     var done by remember(match.id) { mutableStateOf(false) }
-    LaunchedEffect(match.id) {
-        hits = MatchFinder.find(repo, match, now) { c, t, h ->
+    // How many channel guides to read; "Search more channels" reads many more.
+    var budget by remember(match.id) { mutableIntStateOf(60) }
+    LaunchedEffect(match.id, budget) {
+        done = false
+        hits = MatchFinder.find(repo, match, now, guideBudget = budget) { c, t, h ->
             checked = c
             total = t
             hits = h
@@ -448,6 +451,13 @@ fun MatchFinderDialog(vm: AppViewModel, match: Match) {
                                 modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
                             )
                             if (shown.isEmpty()) SkeletonRows(Modifier.height(180.dp), rows = 3, underHeader = false)
+                        }
+                    }
+                }
+                if (done && hits.none { it.score >= 8 } && budget < 200) {
+                    item(key = "more") {
+                        Box(Modifier.fillMaxWidth().padding(top = 10.dp), contentAlignment = Alignment.Center) {
+                            GlassButton("Search more channels", EmberIcons.Search) { budget = 200 }
                         }
                     }
                 }

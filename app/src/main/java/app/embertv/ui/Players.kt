@@ -153,8 +153,8 @@ internal fun FullScreenButton() {
 internal fun appOrientation(direction: Int): Int = when (direction) {
     1 -> ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
     2 -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-    // Turns whenever the phone does, even with the phone's rotation lock on.
-    else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
+    // Turns with the phone, unless its rotation lock is on (Sideways forces it round).
+    else -> ActivityInfo.SCREEN_ORIENTATION_FULL_USER
 }
 
 /** On phones, play full screen, turning with the phone; put things back when playback ends. */
@@ -166,7 +166,7 @@ internal fun PhoneFullscreen() {
     val direction = LocalAppVm.current.screenDirection
     LaunchedEffect(activity, force) {
         activity.requestedOrientation =
-            if (force) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR
+            if (force) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_FULL_USER
     }
     DisposableEffect(activity) {
         val window = activity.window
@@ -968,10 +968,8 @@ fun LivePlayerScreen(vm: AppViewModel, channelsIn: List<Channel>, startIndex: In
                     guideOpen = false
                     if (wider == null) zapTo(i) else if (playingInList && i == guideIndex) Unit else vm.replacePlayer(wider, i)
                 },
-                onClose = {
-                    guideOpen = false
-                    guideGroup = null
-                },
+                // The group you picked stays picked the next time the guide opens.
+                onClose = { guideOpen = false },
                 groupId = groupId,
                 onGroupPicked = { guideGroup = it },
             )

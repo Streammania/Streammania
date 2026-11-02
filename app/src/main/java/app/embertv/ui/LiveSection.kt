@@ -167,8 +167,10 @@ fun ChannelRow(
         onClick = onClick,
         onLongClick = onLongClick,
     ) { _ ->
+        val phone = !LocalIsTv.current
         Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
+            // Phones: no long provider numbers, just the logo and name, as in Apple's TV app.
+            if (!phone) Text(
                 if (channel.num > 0) channel.num.toString() else "",
                 style = Txt.Caption,
                 color = Ember.Faint,
@@ -185,7 +187,7 @@ fun ChannelRow(
                     val (clean, tag) = channelParts(channel.name)
                     Text(
                         clean,
-                        style = Txt.Headline.copy(fontSize = 16.sp),
+                        style = Txt.Headline.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
@@ -199,7 +201,7 @@ fun ChannelRow(
                     Spacer(Modifier.height(if (compact) 1.dp else 3.dp))
                     Text(current.title, style = Txt.Caption, color = Ember.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(if (compact) 3.dp else 5.dp))
-                    ProgressBar(current.progress(now), Modifier.width(140.dp))
+                    ProgressBar(current.progress(now), if (phone) Modifier.fillMaxWidth(0.8f) else Modifier.width(140.dp))
                 }
             }
             if (isFavourite) {

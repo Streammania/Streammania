@@ -94,7 +94,7 @@ private val HeaderButton = Color(0x59000000)
 
 /** Side padding used by screens shared between TV and phone. */
 @Composable
-fun edgePadding(): Dp = if (LocalIsTv.current) 48.dp else 16.dp
+fun edgePadding(): Dp = if (LocalIsTv.current) 48.dp else 20.dp
 
 /**
  * Phone home: content fills the screen and scrolls underneath a frosted header (large title,
