@@ -82,8 +82,17 @@ private fun MovieGrid(vm: AppViewModel, repo: Repository, categoryId: String, gr
             SkeletonPosters(Modifier.fillMaxSize())
             // The whole-library pages download every film at once, which can take a while.
             if (categoryId == ALL || categoryId == RECENT) {
+                // What it's doing and for how long, so a slow step is easy to spot.
+                val status by androidx.compose.runtime.produceState("", categoryId) {
+                    val started = System.currentTimeMillis()
+                    while (true) {
+                        val secs = (System.currentTimeMillis() - started) / 1000
+                        value = (repo.loadNote.ifBlank { "Getting all your films" }) + "… ${secs}s"
+                        kotlinx.coroutines.delay(1_000)
+                    }
+                }
                 Text(
-                    "Getting all your films… big libraries can take a minute.",
+                    status,
                     style = Txt.Caption,
                     color = Ember.Dim,
                     modifier = Modifier.align(Alignment.TopStart).padding(start = 10.dp),

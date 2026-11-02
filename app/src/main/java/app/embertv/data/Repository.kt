@@ -138,7 +138,18 @@ class Repository(val client: XtreamClient) {
     private val seriesGate = kotlinx.coroutines.sync.Mutex()
 
     private suspend fun rawAllChannels(): List<Channel> = allLive ?: liveGate.withLock { allLive ?: client.channels(null).also { allLive = it } }
-    private suspend fun rawAllMovies(): List<Movie> = allMovies ?: moviesGate.withLock { allMovies ?: fullList { client.movies(null) }.also { allMovies = it } }
+    /** What the whole-library load is doing right now, shown while it runs (to see where it's slow). */
+    @Volatile var loadNote: String = ""
+
+    private suspend fun rawAllMovies(): List<Movie> = allMovies ?: moviesGate.withLock {
+        allMovies ?: run {
+            loadNote = "Asking your provider for every film"
+            fullList { client.movies(null) }.also {
+                allMovies = it
+                loadNote = "Got ${it.size} films, sorting them"
+            }
+        }
+    }
     private suspend fun rawAllSeries(): List<Series> = allSeries ?: seriesGate.withLock { allSeries ?: fullList { client.series(null) }.also { allSeries = it } }
 
     /**
@@ -209,9 +220,12 @@ class Repository(val client: XtreamClient) {
         val raw = rawMovies(categoryId)
         if (!mergeVersions) return raw
         mergedMovies[categoryId]?.let { return it }
+        if (categoryId == ALL) loadNote = "Getting the film groups"
         val names = movieCategoryNames()
+        if (categoryId == ALL) loadNote = "Grouping ${raw.size} films by quality"
         val merged = withContext(Dispatchers.Default) { Versions.mergeMovies(raw, names) }
         mergedMovies[categoryId] = merged
+        if (categoryId == ALL) loadNote = "Showing ${merged.size} films"
         return merged
     }
 
