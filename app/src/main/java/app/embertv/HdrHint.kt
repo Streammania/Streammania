@@ -52,7 +52,8 @@ object HdrHint {
             allowedVideoJoiningTimeMs: Long,
             out: ArrayList<Renderer>,
         ) {
-            out.add(HintingVideoRenderer(context, mediaCodecSelector, allowedVideoJoiningTimeMs, eventHandler, eventListener))
+            // Built exactly as the standard one is (same decoder set-up and fallback), with only the HDR hint added.
+            out.add(HintingVideoRenderer(context, codecAdapterFactory, mediaCodecSelector, allowedVideoJoiningTimeMs, enableDecoderFallback, eventHandler, eventListener))
         }
     }
 }
@@ -60,11 +61,13 @@ object HdrHint {
 @OptIn(UnstableApi::class)
 private class HintingVideoRenderer(
     context: Context,
+    adapterFactory: androidx.media3.exoplayer.mediacodec.MediaCodecAdapter.Factory,
     selector: MediaCodecSelector,
     joiningMs: Long,
+    fallback: Boolean,
     handler: Handler,
     listener: VideoRendererEventListener,
-) : MediaCodecVideoRenderer(context, selector, joiningMs, handler, listener, 50) {
+) : MediaCodecVideoRenderer(context, adapterFactory, selector, joiningMs, fallback, handler, listener, 50) {
     override fun getMediaFormat(
         format: Format,
         codecMimeType: String,

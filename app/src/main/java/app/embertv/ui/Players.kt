@@ -368,6 +368,7 @@ private fun rememberExoPlayer(
     onStop: (ExoPlayer) -> Unit,
 ): ExoPlayer {
     val context = LocalContext.current
+    val hdrHintOn = LocalAppVm.current.hdrHint != "off"
     val exo = remember {
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent(userAgent)
@@ -377,7 +378,8 @@ private fun rememberExoPlayer(
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(15_000, 50_000, 1_000, 2_500)
             .build()
-        ExoPlayer.Builder(context, app.embertv.HdrHint.renderersFactory(context))
+        // The HDR hint only when it's switched on (Settings → Playing → 4K picture); otherwise the standard set-up.
+        (if (hdrHintOn) ExoPlayer.Builder(context, app.embertv.HdrHint.renderersFactory(context)) else ExoPlayer.Builder(context))
             .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http)))
             .setLoadControl(loadControl)
             .build()
