@@ -1,6 +1,9 @@
 package app.embertv.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -39,6 +42,9 @@ import app.embertv.data.favouriteKey
 fun CastRow(cast: List<CastMember>, edge: Dp) {
     if (cast.isEmpty()) return
     val isTv = LocalIsTv.current
+    // Picking someone shows what else of theirs is in your lists.
+    var picked by remember { mutableStateOf<CastMember?>(null) }
+    picked?.let { p -> ActorSheet(LocalAppVm.current, p) { picked = null } }
     val size = if (isTv) 96.dp else 76.dp
     Column(Modifier.fillMaxWidth()) {
         Text("Cast & Crew", style = Txt.Headline, modifier = Modifier.padding(start = edge))
@@ -57,7 +63,7 @@ fun CastRow(cast: List<CastMember>, edge: Dp) {
                         color = Ember.Card,
                         focusedColor = Ember.Card,
                         onFocusChange = { focused = it },
-                        onClick = {},
+                        onClick = { if (p.id > 0) picked = p },
                     ) { _ ->
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(initials(p.name), style = Txt.Headline, color = Ember.Dim)
@@ -77,6 +83,96 @@ fun CastRow(cast: List<CastMember>, edge: Dp) {
                         Text(p.role, style = Txt.Caption, color = Ember.Faint, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Someone from the cast: their photo and name, then the films and series in your lists they're in,
+ * best known first. Picking one opens it.
+ */
+@Composable
+private fun ActorSheet(vm: AppViewModel, person: CastMember, onDismiss: () -> Unit) {
+    val isTv = LocalIsTv.current
+    val found by androidx.compose.runtime.produceState<Pair<List<Movie>, List<Series>>?>(null, person.id) { value = vm.withActor(person) ?: (emptyList<Movie>() to emptyList()) }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        DialogBackdropBlur()
+        Column(
+            Modifier
+                .width(if (isTv) 760.dp else 360.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(28.dp))
+                .background(dialogPanelColor())
+                .padding(vertical = if (isTv) 10.dp else 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(Modifier.size(if (isTv) 96.dp else 80.dp).glassSurface(CircleShape, Ember.Card), contentAlignment = Alignment.Center) {
+                Text(initials(person.name), style = Txt.Headline, color = Ember.Dim)
+                NetImage(person.photo, Modifier.fillMaxSize().clip(CircleShape))
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(person.name, style = Txt.Title, textAlign = TextAlign.Center)
+            Text("In your films and series", style = Txt.Caption, color = Ember.Dim)
+            Spacer(Modifier.height(16.dp))
+            val f = found
+            when {
+                f == null -> SkeletonPosters(Modifier.height(if (isTv) 230.dp else 200.dp).padding(horizontal = 20.dp), minSize = if (isTv) 120.dp else 96.dp)
+                f.first.isEmpty() && f.second.isEmpty() -> Text(
+                    "Nothing else with ${person.name} in your lists.",
+                    style = Txt.Body,
+                    color = Ember.Dim,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                )
+                else -> androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = if (isTv) 440.dp else 480.dp)) {
+                    if (f.first.isNotEmpty()) item(key = "films") {
+                        Column {
+                            SheetSection("Films", Modifier.padding(start = 20.dp))
+                            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                items(f.first, key = { it.streamId }) { m ->
+                                    PosterCard(
+                                        title = m.name,
+                                        image = m.poster,
+                                        focusKey = "actor:m:${m.streamId}",
+                                        modifier = Modifier.width(if (isTv) 120.dp else 104.dp),
+                                        badge = badgeText(m.qualities()),
+                                        watched = vm.movieWatched(m),
+                                        onClick = {
+                                            onDismiss()
+                                            vm.push(Screen.MovieDetail(m))
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (f.second.isNotEmpty()) item(key = "series") {
+                        Column {
+                            SheetSection("Series", Modifier.padding(start = 20.dp, top = 10.dp))
+                            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                items(f.second, key = { it.seriesId }) { sr ->
+                                    PosterCard(
+                                        title = sr.name,
+                                        image = sr.cover,
+                                        focusKey = "actor:s:${sr.seriesId}",
+                                        modifier = Modifier.width(if (isTv) 120.dp else 104.dp),
+                                        onClick = {
+                                            onDismiss()
+                                            vm.push(Screen.SeriesDetail(sr))
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (!isTv) {
+                Spacer(Modifier.height(10.dp))
+                PillButton("Close", Modifier.padding(horizontal = 20.dp).fillMaxWidth(), onClick = onDismiss)
+            } else {
+                Spacer(Modifier.height(8.dp))
+                RemoteHints(listOf(Hint("OK", "Open"), Hint("BACK", "Close")))
             }
         }
     }

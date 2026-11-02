@@ -2274,6 +2274,43 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * The films and series in your provider's lists that [person] is in (from TMDB's credits).
+     * Null when there's no TMDB key or the credits can't be read.
+     */
+    suspend fun withActor(person: app.embertv.data.CastMember): Pair<List<Movie>, List<Series>>? {
+        val t = tmdb ?: return null
+        val r = repo ?: return null
+        if (person.id <= 0) return null
+        val (films, shows) = t.creditsFor(person.id)
+        if (films.isEmpty() && shows.isEmpty()) return emptyList<Movie>() to emptyList()
+        suspend fun <T> safely(block: suspend () -> List<T>): List<T> = try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+        val movies = if (films.isEmpty()) emptyList() else safely { r.allMovies() }
+        val series = if (shows.isEmpty()) emptyList() else safely { r.allSeries() }
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            fun <T> match(wanted: List<app.embertv.data.Suggestion>, pool: List<T>, name: (T) -> String, year: (T) -> String?): List<T> {
+                val byKey = HashMap<String, app.embertv.data.Suggestion>()
+                for (w in wanted) byKey.putIfAbsent(Versions.key(w.title), w)
+                val found = LinkedHashMap<String, T>()
+                for (item in pool) {
+                    val k = Versions.key(name(item))
+                    val w = byKey[k] ?: continue
+                    val y = year(item)
+                    if (k !in found && (w.year.isEmpty() || y == null || y == w.year)) found[k] = item
+                }
+                // In the order TMDB ranks them (best known first).
+                return wanted.mapNotNull { found[Versions.key(it.title)] }.distinct()
+            }
+            match(films, movies, { it.name }, { Versions.year(it.name) }) to match(shows, series, { it.name }, { null })
+        }
+    }
+
     private fun <T> pickMore(
         ownName: String,
         suggestions: List<app.embertv.data.Suggestion>,

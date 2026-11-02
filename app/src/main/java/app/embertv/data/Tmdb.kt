@@ -9,7 +9,7 @@ import java.net.URL
 import java.net.URLEncoder
 
 /** Someone in the cast, with their photo from TMDB. */
-data class CastMember(val name: String, val role: String, val photo: String)
+data class CastMember(val name: String, val role: String, val photo: String, val id: Int = 0)
 
 /** A title TMDB recommends. */
 data class Suggestion(val title: String, val year: String, val poster: String)
@@ -54,6 +54,25 @@ class Tmdb(private val key: String) {
         return asArray(root.opt("results")).objects().firstOrNull()?.optInt("id")?.takeIf { it > 0 }
     }
 
+    /**
+     * Everything [personId] has acted in: films and shows, best known first. Each is a
+     * [Suggestion] (title, year, poster) to match against the provider's lists.
+     */
+    suspend fun creditsFor(personId: Int): Pair<List<Suggestion>, List<Suggestion>> {
+        val root = get("/person/$personId/combined_credits") ?: return emptyList<Suggestion>() to emptyList()
+        val all = asArray(root.opt("cast")).objects().sortedByDescending { it.optDouble("popularity", 0.0) }
+        fun pick(kind: String) = all.filter { it.optString("media_type") == kind }.map { o ->
+            val date = o.optString("release_date").ifEmpty { o.optString("first_air_date") }
+            val path = o.optString("poster_path")
+            Suggestion(
+                o.optString("title").ifEmpty { o.optString("name") },
+                date.take(4),
+                if (path.isNotBlank() && path != "null") "https://image.tmdb.org/t/p/w342$path" else "",
+            )
+        }.distinctBy { it.title + it.year }
+        return pick("movie") to pick("tv")
+    }
+
     /** Cast, trailer and suggestions for a film ("movie") or show ("tv"). */
     suspend fun extras(kind: String, tmdbId: Int, title: String, year: String): Extras? {
         val cacheKey = "$kind:$tmdbId:$title"
@@ -69,7 +88,7 @@ class Tmdb(private val key: String) {
                         asArray(o.opt("roles")).objects().firstOrNull()?.optString("character").orEmpty()
                     }
                     val path = o.optString("profile_path")
-                    CastMember(o.optString("name"), role, if (path.isNotBlank() && path != "null") "https://image.tmdb.org/t/p/w185$path" else "")
+                    CastMember(o.optString("name"), role, if (path.isNotBlank() && path != "null") "https://image.tmdb.org/t/p/w185$path" else "", o.optInt("id"))
                 }
                 val videos = asArray(root.optJSONObject("videos")?.opt("results")).objects()
                     .filter { it.optString("site") == "YouTube" }
