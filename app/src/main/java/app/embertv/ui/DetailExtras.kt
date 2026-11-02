@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -103,7 +104,8 @@ private fun ActorSheet(vm: AppViewModel, person: CastMember, onDismiss: () -> Un
         DialogBackdropBlur()
         Column(
             Modifier
-                .width(if (isTv) 760.dp else 360.dp)
+                // Phones: most of the screen's width, so it fits small phones too.
+                .then(if (isTv) Modifier.width(760.dp) else Modifier.fillMaxWidth(0.92f).widthIn(max = 420.dp))
                 .clip(androidx.compose.foundation.shape.RoundedCornerShape(28.dp))
                 .background(dialogPanelColor())
                 .padding(vertical = if (isTv) 10.dp else 20.dp),
