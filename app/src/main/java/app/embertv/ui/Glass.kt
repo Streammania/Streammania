@@ -157,10 +157,12 @@ fun dialogPanelColor(): Color = if (LocalIsTv.current) Color.Transparent else Co
 @Composable
 fun DialogBackdropBlur() {
     val isTv = LocalIsTv.current
-    if (!isTv && !blurSupported) return
     val view = LocalView.current
     SideEffect {
         val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
+        // Pop-up cards open and close with a soft, quick fade (not Android's zoom), like Apple's.
+        window.setWindowAnimations(android.R.style.Animation_Toast)
+        if (!isTv && !blurSupported) return@SideEffect
         if (isTv) {
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             window.setDimAmount(0.93f)

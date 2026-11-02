@@ -1187,7 +1187,7 @@ fun LivePlayerScreen(vm: AppViewModel, channelsIn: List<Channel>, startIndex: In
         AnimatedVisibility(
             visible = scoresOpen,
             enter = fadeIn() + androidx.compose.animation.slideInHorizontally { it / 3 },
-            exit = fadeOut(androidx.compose.animation.core.tween(120)),  // Closing is quick: a short fade, no slide (smoother on Fire TV Sticks)
+            exit = PanelExit,
             modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
         ) {
             Box(Modifier.fillMaxHeight()) {
@@ -1200,7 +1200,7 @@ fun LivePlayerScreen(vm: AppViewModel, channelsIn: List<Channel>, startIndex: In
         AnimatedVisibility(
             visible = optionsOpen,
             enter = fadeIn() + androidx.compose.animation.slideInHorizontally { it / 3 },
-            exit = fadeOut(androidx.compose.animation.core.tween(120)),  // Closing is quick: a short fade, no slide (smoother on Fire TV Sticks)
+            exit = PanelExit,
             modifier = Modifier.fillMaxSize(),
         ) {
             Box(Modifier.fillMaxSize()) {
@@ -2236,7 +2236,7 @@ fun VodPlayerScreen(vm: AppViewModel, items: List<VodItem>, startIndex: Int, sta
         AnimatedVisibility(
             visible = scoresOpen,
             enter = fadeIn() + androidx.compose.animation.slideInHorizontally { it / 3 },
-            exit = fadeOut(androidx.compose.animation.core.tween(120)),  // Closing is quick: a short fade, no slide (smoother on Fire TV Sticks)
+            exit = PanelExit,
             modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
         ) {
             Box(Modifier.fillMaxHeight()) {
@@ -2272,7 +2272,7 @@ fun VodPlayerScreen(vm: AppViewModel, items: List<VodItem>, startIndex: Int, sta
         AnimatedVisibility(
             visible = open != null,
             enter = fadeIn() + androidx.compose.animation.slideInHorizontally { it / 3 },
-            exit = fadeOut(androidx.compose.animation.core.tween(120)),  // Closing is quick: a short fade, no slide (smoother on Fire TV Sticks)
+            exit = PanelExit,
             modifier = Modifier.fillMaxSize(),
         ) {
             // Keeps showing the last panel while it slides away.
@@ -2596,6 +2596,14 @@ private fun VodTouchOverlay(
         }
     }
 }
+
+/**
+ * How every side panel closes, Apple style: it eases back a short way towards the edge it came
+ * from while fading, quickly (under a fifth of a second), speeding up as it goes. Short moves keep
+ * it smooth on a Fire TV Stick, where a long slide over video stutters.
+ */
+private val PanelExit = fadeOut(androidx.compose.animation.core.tween(170, easing = androidx.compose.animation.core.FastOutLinearInEasing)) +
+    androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(190, easing = androidx.compose.animation.core.FastOutLinearInEasing)) { it / 10 }
 
 /** Phones: a small labelled glass pill along the bottom of the player, as in Apple's TV app. */
 @Composable
