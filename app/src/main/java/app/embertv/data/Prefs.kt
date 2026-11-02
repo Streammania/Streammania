@@ -600,11 +600,15 @@ class Prefs(context: Context) {
 
     /** Home rows this profile has turned off. */
     var homeHidden: Set<String>
-        get() = sp.getStringSet(pk("home_hidden"), null)?.toSet() ?: emptySet()
+        // Until you arrange it yourself, Home starts calm: six rows, the rest one tap away in Arrange Home.
+        get() = sp.getStringSet(pk("home_hidden"), null)?.toSet() ?: DEFAULT_HOME_HIDDEN
         set(value) {
             sp.edit().putStringSet(pk("home_hidden"), value).apply()
         }
 }
+
+/** Rows Home leaves off until switched on: Home starts with six rows instead of eleven. */
+val DEFAULT_HOME_HIDDEN = setOf("recent-channels", "fav-channels", "live", "movies", "series")
 
 /** English football: the Premier League, the EFL and the domestic cups. */
 val DEFAULT_SPORT_LEAGUES = setOf("eng.1", "eng.2", "eng.3", "eng.4", "eng.fa", "eng.league_cup")

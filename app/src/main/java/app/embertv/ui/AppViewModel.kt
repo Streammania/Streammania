@@ -1489,9 +1489,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resetHomeRows() {
         homeOrder = emptyList()
-        homeHidden = emptySet()
+        homeHidden = app.embertv.data.DEFAULT_HOME_HIDDEN
         prefs.homeOrder = emptyList()
-        prefs.homeHidden = emptySet()
+        prefs.homeHidden = app.embertv.data.DEFAULT_HOME_HIDDEN
     }
 
     // ---- Keeping films and series up to date ----

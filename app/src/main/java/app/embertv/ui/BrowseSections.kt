@@ -440,6 +440,8 @@ fun SettingsSection(vm: AppViewModel) {
         }
     }
 
+    // Set-and-forget options live under Advanced, so the main list stays short.
+    var showAdvanced by remember { mutableStateOf(false) }
     val settingsList: @Composable (Modifier) -> Unit = { modifier ->
         Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             val p = vm.profile
@@ -457,21 +459,7 @@ fun SettingsSection(vm: AppViewModel) {
                 }
                 SettingRow("Background", Ember.backdrop.name, "The colour behind everything", focusKey = "set:backdrop") { pickingBackdrop = true }
                 SettingRow("Text size", vm.textSizeLabel, "Bigger is easier to read from across the room", focusKey = "set:textsize") { vm.cycleTextSize() }
-                if (!isTv) {
-                    SettingRow(
-                        "Screen direction",
-                        vm.screenDirectionLabel,
-                        "Sideways shows more of the TV guide and the rows on Home",
-                        focusKey = "set:direction",
-                    ) { vm.cycleScreenDirection() }
-                }
                 if (isTv) {
-                    SettingRow(
-                        "Remote hints",
-                        if (HintsSetting.show) "On" else "Off",
-                        "The little OK, arrow and Back guides on screen",
-                        focusKey = "set:hints",
-                    ) { vm.toggleHints() }
                     SettingRow(
                         "Screensaver",
                         if (vm.screensaverMinutes == 0) "Off" else "After ${vm.screensaverMinutes} min",
@@ -520,15 +508,6 @@ fun SettingsSection(vm: AppViewModel) {
                     if (vm.channelsOnce) "FHD, HD and SD copies show as one channel" else "Every copy your provider lists is shown",
                     focusKey = "set:channelsonce",
                 ) { vm.toggleChannelsOnce() }
-                if (vm.channelsOnce && vm.qualityChoice == "ask") {
-                    SettingRow(
-                        "Remember quality per channel",
-                        if (vm.rememberChannelQuality) "On" else "Off",
-                        if (vm.rememberChannelQuality) "Channels open in the quality you last picked. Turn off to forget"
-                        else "Ask every time, even for channels you've picked before",
-                        focusKey = "set:rememberquality",
-                    ) { vm.toggleRememberChannelQuality() }
-                }
                 if (!kids) {
                     val favChannels = vm.favourites.count { it.type == app.embertv.data.ContentType.LIVE }
                     val hiddenCount = vm.hiddenChannels.size
@@ -551,33 +530,12 @@ fun SettingsSection(vm: AppViewModel) {
                         focusKey = "set:categories",
                     ) { managingCategories = true }
                 }
-                if (isTv) {
-                    SettingRow(
-                        "Guide and channel list",
-                        if (vm.compactLists) "Compact" else "Comfortable",
-                        if (vm.compactLists) "More channels on screen" else "Bigger rows, with times on each programme",
-                        focusKey = "set:compact",
-                    ) { vm.toggleCompactLists() }
-                    SettingRow(
-                        "Live preview",
-                        if (vm.livePreview) "On" else "Off",
-                        "A small muted picture of the highlighted channel",
-                        focusKey = "set:preview",
-                    ) { vm.toggleLivePreview() }
-                }
                 SettingRow(
                     "Pause & rewind live TV",
                     if (vm.timeshiftOn) "On" else "Off",
                     "Uses your provider's catch-up, on channels that have it",
                     focusKey = "set:timeshift",
                 ) { vm.toggleTimeshift() }
-                SettingRow(
-                    if (isTv) "Channel up / down" else "Channel swipe",
-                    if (isTv) (if (vm.invertZap) "Up goes to the previous channel" else "Up goes to the next channel")
-                    else (if (vm.invertZap) "Swipe down for the next channel" else "Swipe up for the next channel"),
-                    null,
-                    focusKey = "set:zap",
-                ) { vm.toggleInvertZap() }
             }
 
             // ---- Playing ----
@@ -608,12 +566,6 @@ fun SettingsSection(vm: AppViewModel) {
                     focusKey = "set:autoplay",
                 ) { vm.toggleAutoplayNext() }
                 SettingRow(
-                    "Picture zoom",
-                    vm.pictureModeLabel,
-                    if (isTv) "Fills the screen on channels with black bars" else "Fills the screen on channels with black bars. Pinch to change it too",
-                    focusKey = "set:picture",
-                ) { vm.cyclePicture(announce = false) }
-                SettingRow(
                     "Audio & subtitles",
                     listOf(
                         if (vm.audioLanguage.isEmpty()) "Default audio" else "English audio",
@@ -622,63 +574,10 @@ fun SettingsSection(vm: AppViewModel) {
                     "What to pick when a stream has a choice",
                     focusKey = "set:audiosubs",
                 ) { choosingAudio = true }
-                if (isTv) {
-                    SettingRow(
-                        "4K picture",
-                        vm.hdrHintLabel,
-                        when (vm.hdrHint) {
-                            "hlg" -> "Unlabelled 4K is treated as HLG (most UK sport)"
-                            "hdr10" -> "Unlabelled 4K is treated as HDR10 (most films)"
-                            "off" -> "4K plays as it comes. Try this if 4K looks too bright"
-                            else -> "Brightens 4K that's dark: HLG for channels, HDR10 for films"
-                        },
-                        focusKey = "set:hdr",
-                    ) { vm.cycleHdrHint() }
-                    SettingRow(
-                        "Match frame rate",
-                        if (vm.matchFrameRate) "On" else "Off",
-                        "Films and series switch to 24Hz. The screen may blink",
-                        focusKey = "set:afr",
-                    ) { vm.toggleMatchFrameRate() }
-                }
-                SettingRow(
-                    "When the app opens",
-                    vm.startOnLabel(),
-                    "Go straight to your last channel or the TV guide",
-                    focusKey = "set:starton",
-                ) { vm.cycleStartOn() }
-            }
-
-            // ---- If something won't play (grown-ups only) ----
-            if (!kids) {
-                SettingsGroup("If something won't play") {
-                    SettingRow("Video player", vm.externalPlayerName(), "Play in VLC or another app instead", focusKey = "set:player") { choosingPlayer = true }
-                    SettingRow(
-                        "Stream format",
-                        if (vm.streamFormat == "m3u8") "HLS (.m3u8)" else "MPEG-TS (.ts)",
-                        "Switch if channels buffer or won't start",
-                        focusKey = "set:format",
-                    ) { vm.toggleStreamFormat() }
-                    SettingRow(
-                        "Player identity",
-                        if (vm.userAgent == DEFAULT_USER_AGENT) "Streammania" else "VLC compatible",
-                        "Some providers only accept certain players",
-                        focusKey = "set:ua",
-                    ) { vm.toggleUserAgent() }
-                }
             }
 
             // ---- This TV / phone & app ----
             SettingsGroup(if (isTv) "This TV & app" else "This phone & app") {
-                if (isTv && !kids) {
-                    val phones = vm.pairedPhoneCount
-                    SettingRow(
-                        "Phones that can control this TV",
-                        if (phones == 0) "None yet" else "$phones paired · select to unpair",
-                        "On your phone, tap the TV button on Home",
-                        focusKey = "set:phones",
-                    ) { vm.forgetPairedPhones() }
-                }
                 if (!kids) SettingRow(
                     "Film details (TMDB)",
                     if (vm.tmdbKey.isBlank()) "Off" else "Connected",
@@ -700,6 +599,132 @@ fun SettingsSection(vm: AppViewModel) {
                 if (!kids) SettingRow("Sign out", "", "Removes your login from this $device", focusKey = "set:signout") {
                     confirmSignOut = true
                 }
+                SettingRow(
+                    "Advanced",
+                    if (showAdvanced) "Hide" else "Show",
+                    if (isTv) "Remote, display, 4K picture and fixes for streams that won't play"
+                    else "Screen direction, quality memory and fixes for streams that won't play",
+                    focusKey = "set:advanced",
+                ) { showAdvanced = !showAdvanced }
+            }
+
+            if (showAdvanced) {
+                // ---- Advanced ----
+                SettingsGroup("Advanced") {
+                    if (!isTv) {
+                        SettingRow(
+                            "Screen direction",
+                            vm.screenDirectionLabel,
+                            "Sideways shows more of the TV guide and the rows on Home",
+                            focusKey = "set:direction",
+                        ) { vm.cycleScreenDirection() }
+                    }
+
+                    if (isTv) {
+                        SettingRow(
+                            "Remote hints",
+                            if (HintsSetting.show) "On" else "Off",
+                            "The little OK, arrow and Back guides on screen",
+                            focusKey = "set:hints",
+                        ) { vm.toggleHints() }
+
+                        SettingRow(
+                            "Guide and channel list",
+                            if (vm.compactLists) "Compact" else "Comfortable",
+                            if (vm.compactLists) "More channels on screen" else "Bigger rows, with times on each programme",
+                            focusKey = "set:compact",
+                        ) { vm.toggleCompactLists() }
+
+                        SettingRow(
+                            "Live preview",
+                            if (vm.livePreview) "On" else "Off",
+                            "A small muted picture of the highlighted channel",
+                            focusKey = "set:preview",
+                        ) { vm.toggleLivePreview() }
+
+                        SettingRow(
+                            "4K picture",
+                            vm.hdrHintLabel,
+                            when (vm.hdrHint) {
+                                "hlg" -> "Unlabelled 4K is treated as HLG (most UK sport)"
+                                "hdr10" -> "Unlabelled 4K is treated as HDR10 (most films)"
+                                "off" -> "4K plays as it comes. Try this if 4K looks too bright"
+                                else -> "Brightens 4K that's dark: HLG for channels, HDR10 for films"
+                            },
+                            focusKey = "set:hdr",
+                        ) { vm.cycleHdrHint() }
+
+                        SettingRow(
+                            "Match frame rate",
+                            if (vm.matchFrameRate) "On" else "Off",
+                            "Films and series switch to 24Hz. The screen may blink",
+                            focusKey = "set:afr",
+                        ) { vm.toggleMatchFrameRate() }
+
+                    if (isTv && !kids) {
+                        val phones = vm.pairedPhoneCount
+                        SettingRow(
+                            "Phones that can control this TV",
+                            if (phones == 0) "None yet" else "$phones paired · select to unpair",
+                            "On your phone, tap the TV button on Home",
+                            focusKey = "set:phones",
+                        ) { vm.forgetPairedPhones() }
+                    }
+
+                    }
+                    if (vm.channelsOnce && vm.qualityChoice == "ask") {
+                        SettingRow(
+                            "Remember quality per channel",
+                            if (vm.rememberChannelQuality) "On" else "Off",
+                            if (vm.rememberChannelQuality) "Channels open in the quality you last picked. Turn off to forget"
+                            else "Ask every time, even for channels you've picked before",
+                            focusKey = "set:rememberquality",
+                        ) { vm.toggleRememberChannelQuality() }
+                    }
+
+                    SettingRow(
+                        if (isTv) "Channel up / down" else "Channel swipe",
+                        if (isTv) (if (vm.invertZap) "Up goes to the previous channel" else "Up goes to the next channel")
+                        else (if (vm.invertZap) "Swipe down for the next channel" else "Swipe up for the next channel"),
+                        null,
+                        focusKey = "set:zap",
+                    ) { vm.toggleInvertZap() }
+
+                    SettingRow(
+                        "Picture zoom",
+                        vm.pictureModeLabel,
+                        if (isTv) "Fills the screen on channels with black bars" else "Fills the screen on channels with black bars. Pinch to change it too",
+                        focusKey = "set:picture",
+                    ) { vm.cyclePicture(announce = false) }
+
+                    SettingRow(
+                        "When the app opens",
+                        vm.startOnLabel(),
+                        "Go straight to your last channel or the TV guide",
+                        focusKey = "set:starton",
+                    ) { vm.cycleStartOn() }
+
+                }
+
+                // ---- If something won't play (grown-ups only) ----
+                if (!kids) {
+                    SettingsGroup("If something won't play") {
+                        SettingRow("Video player", vm.externalPlayerName(), "Play in VLC or another app instead", focusKey = "set:player") { choosingPlayer = true }
+                        SettingRow(
+                            "Stream format",
+                            if (vm.streamFormat == "m3u8") "HLS (.m3u8)" else "MPEG-TS (.ts)",
+                            "Switch if channels buffer or won't start",
+                            focusKey = "set:format",
+                        ) { vm.toggleStreamFormat() }
+                        SettingRow(
+                            "Player identity",
+                            if (vm.userAgent == DEFAULT_USER_AGENT) "Streammania" else "VLC compatible",
+                            "Some providers only accept certain players",
+                            focusKey = "set:ua",
+                        ) { vm.toggleUserAgent() }
+                    }
+                }
+
             }
         }
     }
