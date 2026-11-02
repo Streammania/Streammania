@@ -217,6 +217,9 @@ data class CategoryRules(val allowMode: Boolean, val keys: Set<String>) {
 
 fun categoryRuleKey(type: ContentType, categoryId: String): String = "${type.name}:$categoryId"
 
+/** Built once from [KIDS_WORDS], rather than for every category name checked. */
+private val KIDS_PATTERNS by lazy { KIDS_WORDS.map { w -> Regex("\\b" + Regex.escape(w)) } }
+
 private val KIDS_WORDS = listOf(
     "kid", "child", "cartoon", "family", "junior", "jr", "animation", "animated", "anime", "disney", "pixar",
     "dreamworks", "nick", "boomerang", "cbeebies", "cbbc", "baby", "toon", "pop", "tiny", "school",
@@ -232,5 +235,5 @@ fun pinHash(profileId: String, pin: String): String {
 fun looksKidsFriendly(name: String): Boolean {
     val n = name.lowercase()
     if (listOf("adult", "xxx", "18+", "+18", "porn", "erotic").any { n.contains(it) }) return false
-    return KIDS_WORDS.any { w -> Regex("\\b" + Regex.escape(w)).containsMatchIn(n) }
+    return KIDS_PATTERNS.any { it.containsMatchIn(n) }
 }

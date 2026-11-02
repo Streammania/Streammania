@@ -74,8 +74,10 @@ fun ratingLabel(raw: String): String? {
     return "★ " + String.format(Locale.UK, "%.1f", value)
 }
 
+private val COUNTRY_PREFIX = Regex("^[A-Z]{2,3}\\s*[:|\\-]\\s*")
+
 fun initials(name: String): String {
-    val words = name.replace(Regex("^[A-Z]{2,3}\\s*[:|\\-]\\s*"), "")
+    val words = name.replace(COUNTRY_PREFIX, "")
         .split(' ', '-', '|', ':')
         .filter { it.isNotBlank() && it.first().isLetterOrDigit() }
     return words.take(2).joinToString("") { it.first().uppercase() }.ifEmpty { "TV" }
