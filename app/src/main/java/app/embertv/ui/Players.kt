@@ -2493,10 +2493,8 @@ private fun VodOverlay(
                     // Subtitles, other languages and other qualities, when this film or episode has them:
                     // round buttons, as on Apple TV, so everything fits.
                     if (hasSubtitles) PlayerButton(EmberIcons.Subtitles, null, "vod:ctl:subs", onClick = onSubtitles)
-                    if (hasLanguages) PlayerButton(EmberIcons.Language, null, "vod:ctl:audio", onClick = onLanguage)
-                    if (hasQualities) PlayerButton(EmberIcons.Sliders, null, "vod:ctl:quality", text = qualityBadge, onClick = onQuality)
                     PlayerButton(EmberIcons.Football, "Scores", "vod:ctl:scores", onClick = onScores)
-                    // Picture zoom, sleep timer and the rest.
+                    // Quality, language, picture zoom, sleep timer and the rest.
                     PlayerButton(EmberIcons.More, null, "vod:ctl:more", onClick = onMore)
                 }
             }
@@ -2802,11 +2800,15 @@ private fun BoxScope.TrackPanel(
     }
 
     val all = kind == "all"
+    // TVs: ••• also holds quality and language now, so the pause buttons stay few.
+    val more = kind == "more"
+    val showQuality = kind == "quality" || ((all || more) && qualities.size > 1)
+    val showLanguage = kind == "audio" || ((all || more) && audio.size > 1)
     SidePanel(onDismiss) {
-        if (kind == "quality" || (all && qualities.size > 1)) {
+        if (showQuality) {
             SheetSection("Quality")
             qualities.forEach { c ->
-                TrackRow(c.label, c.versionId == activeQuality, autoFocus = kind == "quality" && c.versionId == activeQuality) { onQuality(c) }
+                TrackRow(c.label, c.versionId == activeQuality, autoFocus = (kind == "quality" || more) && c.versionId == activeQuality) { onQuality(c) }
             }
             PanelNote("Carries on from the same moment.")
             Spacer(Modifier.height(18.dp))
@@ -2820,18 +2822,18 @@ private fun BoxScope.TrackPanel(
             if (subs.isEmpty()) PanelNote("This one doesn't come with subtitles.")
             if (all) Spacer(Modifier.height(18.dp))
         }
-        if (kind == "audio" || (all && audio.size > 1)) {
+        if (showLanguage) {
             SheetSection("Language")
             audio.forEachIndexed { i, o ->
-                TrackRow(o.label, o.selected, autoFocus = kind == "audio" && (o.selected || (i == 0 && audio.none { it.selected }))) { selectAudio(o) }
+                TrackRow(o.label, o.selected, autoFocus = (kind == "audio" || (more && !showQuality)) && (o.selected || (i == 0 && audio.none { it.selected }))) { selectAudio(o) }
             }
             if (audio.size <= 1) PanelNote("This one only comes in one language.")
-            if (all) Spacer(Modifier.height(18.dp))
+            if (all || more) Spacer(Modifier.height(18.dp))
         }
         if (kind == "more" || all) {
             SheetSection("Picture")
             PICTURE_MODES.forEachIndexed { i, name ->
-                TrackRow(name, vm.pictureMode == i, autoFocus = kind == "more" && vm.pictureMode == i) { vm.setPicture(i, announce = false) }
+                TrackRow(name, vm.pictureMode == i, autoFocus = more && !showQuality && !showLanguage && vm.pictureMode == i) { vm.setPicture(i, announce = false) }
             }
             PanelNote(if (isTv) "Zoom fills the screen when there are black bars." else "Zoom fills the screen when there are black bars. You can also pinch the picture.")
             Spacer(Modifier.height(18.dp))
