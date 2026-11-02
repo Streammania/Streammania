@@ -65,14 +65,14 @@ fun MoviesSection(vm: AppViewModel) {
                     onSelectCategory = { select(it.id, true) },
                 )
                 Spacer(Modifier.width(24.dp))
-                MovieGrid(vm, repo, selectedId, Modifier.weight(1f))
+                MovieGrid(vm, repo, selectedId, categories.firstOrNull { it.id == selectedId }?.name?.removePrefix("★  ") ?: "Films", Modifier.weight(1f))
             }
         }
     }
 }
 
 @Composable
-private fun MovieGrid(vm: AppViewModel, repo: Repository, categoryId: String, modifier: Modifier) {
+private fun MovieGrid(vm: AppViewModel, repo: Repository, categoryId: String, groupName: String, modifier: Modifier) {
     val favSnapshot = if (categoryId == FAVOURITES) vm.favourites.filter { it.type == ContentType.MOVIE } else null
     val load by rememberQuietLoad(vm.vodVersion, repo, categoryId, vm.reloadToken, favSnapshot) {
         favSnapshot?.map { it.toMovie() } ?: repo.movies(categoryId)
@@ -98,15 +98,23 @@ private fun MovieGrid(vm: AppViewModel, repo: Repository, categoryId: String, mo
                     horizontalArrangement = Arrangement.spacedBy(18.dp),
                     verticalArrangement = Arrangement.spacedBy(22.dp),
                 ) {
+                    // The group's name big and bold, how many there are, and the sort button on the right.
                     item(key = "sort", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                        SortChip(sortName(vm.movieSort), "movie:$categoryId:sort") { vm.cycleMovieSort() }
+                        Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.Bottom) {
+                            Column(Modifier.weight(1f)) {
+                                Text(groupName, style = Txt.LargeTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("${sorted.size} " + if (sorted.size == 1) "film" else "films", style = Txt.Label, color = Ember.Dim)
+                            }
+                            SortChip(sortName(vm.movieSort), "movie:$categoryId:sort") { vm.cycleMovieSort() }
+                        }
                     }
                     items(sorted, key = { it.streamId }) { m ->
                         PosterCard(
-                            title = m.name,
+                            // The year goes underneath, with the rating, rather than in the title.
+                            title = m.name.replace(Regex("\\s*[(\\[]\\d{4}[)\\]]\\s*$"), ""),
                             image = m.poster,
                             focusKey = "movie:$categoryId:${m.streamId}",
-                            subtitle = ratingLabel(m.rating),
+                            subtitle = listOfNotNull(app.embertv.data.Versions.year(m.name), ratingLabel(m.rating)).joinToString(" · ").ifEmpty { null },
                             badge = badgeText(m.qualities()),
                             favourite = vm.favKeys.contains(favouriteKey(ContentType.MOVIE, m.streamId)),
                             watched = vm.movieWatched(m),

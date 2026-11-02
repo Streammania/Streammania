@@ -75,14 +75,14 @@ fun SeriesSection(vm: AppViewModel) {
                     onSelectCategory = { select(it.id, true) },
                 )
                 Spacer(Modifier.width(24.dp))
-                SeriesGrid(vm, repo, selectedId, Modifier.weight(1f))
+                SeriesGrid(vm, repo, selectedId, categories.firstOrNull { it.id == selectedId }?.name?.removePrefix("★  ") ?: "Series", Modifier.weight(1f))
             }
         }
     }
 }
 
 @Composable
-private fun SeriesGrid(vm: AppViewModel, repo: Repository, categoryId: String, modifier: Modifier) {
+private fun SeriesGrid(vm: AppViewModel, repo: Repository, categoryId: String, groupName: String, modifier: Modifier) {
     val favSnapshot = if (categoryId == FAVOURITES) vm.favourites.filter { it.type == ContentType.SERIES } else null
     val load by rememberQuietLoad(vm.vodVersion, repo, categoryId, vm.reloadToken, favSnapshot) {
         favSnapshot?.map { it.toSeries() } ?: repo.series(categoryId)
@@ -108,8 +108,15 @@ private fun SeriesGrid(vm: AppViewModel, repo: Repository, categoryId: String, m
                     horizontalArrangement = Arrangement.spacedBy(18.dp),
                     verticalArrangement = Arrangement.spacedBy(22.dp),
                 ) {
+                    // The group's name big and bold, how many there are, and the sort button on the right.
                     item(key = "sort", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                        SortChip(sortName(vm.seriesSort), "series:$categoryId:sort") { vm.cycleSeriesSort() }
+                        Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.Bottom) {
+                            Column(Modifier.weight(1f)) {
+                                Text(groupName, style = Txt.LargeTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("${sorted.size} " + if (sorted.size == 1) "series" else "series", style = Txt.Label, color = Ember.Dim)
+                            }
+                            SortChip(sortName(vm.seriesSort), "series:$categoryId:sort") { vm.cycleSeriesSort() }
+                        }
                     }
                     items(sorted, key = { it.seriesId }) { s ->
                         PosterCard(
@@ -117,7 +124,7 @@ private fun SeriesGrid(vm: AppViewModel, repo: Repository, categoryId: String, m
                             image = s.cover,
                             focusKey = "series:$categoryId:${s.seriesId}",
                             subtitle = listOfNotNull(s.year.takeIf { it.isNotBlank() }, ratingLabel(s.rating))
-                                .joinToString("  ")
+                                .joinToString(" · ")
                                 .ifEmpty { null },
                             badge = badgeText(s.qualities()),
                             favourite = vm.favKeys.contains(favouriteKey(ContentType.SERIES, s.seriesId)),

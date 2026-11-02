@@ -378,6 +378,7 @@ fun PosterCard(
         FocusBox(
             modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
             focusKey = focusKey,
+            shape = RoundedCornerShape(16.dp),
             focusedScale = 1.08f,
             onFocusChange = {
                 focused = it
@@ -392,16 +393,17 @@ fun PosterCard(
             if (badge != null) PosterBadge(badge, Modifier.align(Alignment.BottomStart).padding(6.dp))
             if (watched) WatchedTick(Modifier.align(Alignment.TopStart).padding(7.dp))
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
+        // Two lines, so long titles aren't cut short; the year or rating underneath in grey.
         Text(
             title,
-            style = Txt.Label,
-            color = if (focused) Ember.Text else Ember.Dim,
-            maxLines = 1,
+            style = Txt.Label.copy(fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium),
+            color = if (focused || !LocalIsTv.current) Ember.Text else Ember.Text.copy(alpha = 0.82f),
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
         if (subtitle != null) {
-            Text(subtitle, style = Txt.Caption, color = Ember.Faint, maxLines = 1)
+            Text(subtitle, style = Txt.Caption, color = Ember.Dim, maxLines = 1)
         }
     }
 }
@@ -557,9 +559,11 @@ fun CategoryRail(
             FocusBox(
                 modifier = Modifier.fillMaxWidth().height(rowHeight),
                 focusKey = "$keyPrefix:cat:${c.id}",
-                shape = RoundedCornerShape(if (sidebar) 12.dp else 10.dp),
-                focusedScale = if (sidebar) 1.05f else 1.03f,
-                color = if (selected) (if (sidebar) Color(0x29FFFFFF) else Ember.Card) else Color.Transparent,
+                // Apple TV sidebar: plain text, a white pill only for the one you're on.
+                shape = RoundedCornerShape(if (sidebar) 23.dp else 10.dp),
+                focusedScale = if (sidebar) 1.04f else 1.03f,
+                color = if (selected && !sidebar) Ember.Card else Color.Transparent,
+                glassEdge = false,
                 focusedColor = Color.White,
                 onFocusChange = { if (it) onFocusCategory(c) },
                 onClick = { onSelectCategory(c) },
@@ -578,7 +582,7 @@ fun CategoryRail(
                     Text(
                         c.name,
                         style = (if (rowHeight < 44.dp) Txt.Label.copy(fontSize = 14.sp) else Txt.Label)
-                            .let { if (sidebar && (selected || focused)) it.copy(fontWeight = FontWeight.SemiBold) else it },
+                            .let { if (sidebar && selected) it.copy(fontWeight = FontWeight.Bold) else if (focused) it.copy(fontWeight = FontWeight.SemiBold) else it },
                         color = when {
                             focused -> Color.Black
                             selected -> Ember.Text
@@ -586,7 +590,13 @@ fun CategoryRail(
                         },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
+                    // The group you're in: bold, with a small dot beside it.
+                    if (selected && sidebar) {
+                        Spacer(Modifier.width(8.dp))
+                        Box(Modifier.size(6.dp).clip(CircleShape).background(if (focused) Color.Black else Ember.Text))
+                    }
                 }
             }
         }
