@@ -42,6 +42,14 @@ object Versions {
         "hi", "multi", "sub", "subs", "dub", "vod", "vf", "vostfr", "ie", "ca", "au", "nf", "amz", "dsnp",
     )
 
+    // Built once: compiling these for every title made grouping a 70,000-film library take minutes.
+    private val EMPTY_BRACKETS = Regex("[\\[(|{]\\s*[-+/,|]*\\s*[\\])|}]")
+    private val DOUBLE_SEPS = Regex("\\s*([-|:·•/])\\s*(?=[-|:·•/])")
+    private val MULTI_SPACE = Regex("\\s{2,}")
+    private val MARKS = Regex("\\p{M}+")
+    private val LANG_PREFIX = Regex("^\\W*([a-z0-9+]{2,6})\\W*[-|:]\\s*")
+    private val NON_ALNUM = Regex("[^a-z0-9]+")
+
     /** Uppercase without changing length, so match positions line up with the original. */
     private fun up(s: String) = String(CharArray(s.length) { s[it].uppercaseChar() })
 
@@ -84,10 +92,10 @@ object Versions {
         var s = sb.toString()
         // Brackets left empty, and separators left dangling at either end or doubled up.
         repeat(2) {
-            s = s.replace(Regex("[\\[(|{]\\s*[-+/,|]*\\s*[\\])|}]"), " ")
+            s = s.replace(EMPTY_BRACKETS, " ")
         }
-        s = s.replace(Regex("\\s*([-|:·•/])\\s*(?=[-|:·•/])"), " ")
-        s = s.replace(Regex("\\s{2,}"), " ").trim()
+        s = s.replace(DOUBLE_SEPS, " ")
+        s = s.replace(MULTI_SPACE, " ").trim()
         fun sep(c: Char) = c == '-' || c == '|' || c == ':' || c == '·' || c == '•' || c == '/' || c == ',' || c.isWhitespace()
         s = s.trimEnd { sep(it) }
         // Keep a label the provider put first on purpose ("|UK| Wonka"); only tidy what removing a tag left.
@@ -99,16 +107,18 @@ object Versions {
 
     /** The same for every quality of a title: no tags, year, language prefix, case or punctuation. */
     fun key(name: String): String {
-        var s = Normalizer.normalize(cleanTitle(name).lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
+        val lower = cleanTitle(name).lowercase()
+        // Accents only need stripping when there are any (most titles are plain ASCII).
+        var s = if (lower.all { it.code < 128 }) lower else Normalizer.normalize(lower, Normalizer.Form.NFD).replace(MARKS, "")
         s = YEAR.replace(s, " ")
         s = s.replace("&", " and ")
         // Leading language or source labels like "EN - ", "|UK| ", "NF: ".
         while (true) {
-            val m = Regex("^\\W*([a-z0-9+]{2,6})\\W*[-|:]\\s*").find(s) ?: break
+            val m = LANG_PREFIX.find(s) ?: break
             if (m.groupValues[1] !in LANGS) break
             s = s.substring(m.range.last + 1)
         }
-        return s.replace(Regex("[^a-z0-9]+"), " ").trim()
+        return s.replace(NON_ALNUM, " ").trim()
     }
 
     /** Groups [items] by title, keeping years apart, in the order they first appear. */

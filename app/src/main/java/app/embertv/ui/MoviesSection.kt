@@ -131,7 +131,7 @@ private fun MovieGrid(vm: AppViewModel, repo: Repository, categoryId: String, gr
                     items(sorted, key = { it.streamId }) { m ->
                         PosterCard(
                             // The year goes underneath, with the rating, rather than in the title.
-                            title = m.name.replace(Regex("\\s*[(\\[]\\d{4}[)\\]]\\s*$"), ""),
+                            title = m.name.replace(TRAILING_YEAR, ""),
                             image = m.poster,
                             focusKey = "movie:$categoryId:${m.streamId}",
                             subtitle = listOfNotNull(app.embertv.data.Versions.year(m.name), ratingLabel(m.rating)).joinToString(" · ").ifEmpty { null },
@@ -147,6 +147,9 @@ private fun MovieGrid(vm: AppViewModel, repo: Repository, categoryId: String, gr
         }
     }
 }
+
+/** "(2024)" at the end of a title (shown underneath instead). */
+private val TRAILING_YEAR = Regex("\\s*[(\\[]\\d{4}[)\\]]\\s*$")
 
 /** Full-bleed backdrop with the scrims that keep text readable over any artwork. */
 @Composable

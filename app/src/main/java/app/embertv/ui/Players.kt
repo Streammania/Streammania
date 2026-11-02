@@ -1187,7 +1187,7 @@ fun LivePlayerScreen(vm: AppViewModel, channelsIn: List<Channel>, startIndex: In
         AnimatedVisibility(
             visible = scoresOpen,
             enter = fadeIn() + androidx.compose.animation.slideInHorizontally { it / 3 },
-            exit = fadeOut() + androidx.compose.animation.slideOutHorizontally { it / 3 },
+            exit = fadeOut(androidx.compose.animation.core.tween(120)),  // Closing is quick: a short fade, no slide (smoother on Fire TV Sticks)
             modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
         ) {
             Box(Modifier.fillMaxHeight()) {
@@ -1200,7 +1200,7 @@ fun LivePlayerScreen(vm: AppViewModel, channelsIn: List<Channel>, startIndex: In
         AnimatedVisibility(
             visible = optionsOpen,
             enter = fadeIn() + androidx.compose.animation.slideInHorizontally { it / 3 },
-            exit = fadeOut() + androidx.compose.animation.slideOutHorizontally { it / 3 },
+            exit = fadeOut(androidx.compose.animation.core.tween(120)),  // Closing is quick: a short fade, no slide (smoother on Fire TV Sticks)
             modifier = Modifier.fillMaxSize(),
         ) {
             Box(Modifier.fillMaxSize()) {
@@ -2236,7 +2236,7 @@ fun VodPlayerScreen(vm: AppViewModel, items: List<VodItem>, startIndex: Int, sta
         AnimatedVisibility(
             visible = scoresOpen,
             enter = fadeIn() + androidx.compose.animation.slideInHorizontally { it / 3 },
-            exit = fadeOut() + androidx.compose.animation.slideOutHorizontally { it / 3 },
+            exit = fadeOut(androidx.compose.animation.core.tween(120)),  // Closing is quick: a short fade, no slide (smoother on Fire TV Sticks)
             modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
         ) {
             Box(Modifier.fillMaxHeight()) {
@@ -2272,7 +2272,7 @@ fun VodPlayerScreen(vm: AppViewModel, items: List<VodItem>, startIndex: Int, sta
         AnimatedVisibility(
             visible = open != null,
             enter = fadeIn() + androidx.compose.animation.slideInHorizontally { it / 3 },
-            exit = fadeOut() + androidx.compose.animation.slideOutHorizontally { it / 3 },
+            exit = fadeOut(androidx.compose.animation.core.tween(120)),  // Closing is quick: a short fade, no slide (smoother on Fire TV Sticks)
             modifier = Modifier.fillMaxSize(),
         ) {
             // Keeps showing the last panel while it slides away.

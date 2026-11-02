@@ -81,6 +81,8 @@ fun initials(name: String): String {
     return words.take(2).joinToString("") { it.first().uppercase() }.ifEmpty { "TV" }
 }
 
+/** Built once (these run for every channel in a list). */
+private val NOT_ALNUM = Regex("[^a-z0-9]")
 private val CHANNEL_TAG_FRONT = Regex("^\\s*[\\[(]?(UHD|4K|FHD|HD|SD|HEVC|H\\.?265)[\\])]?\\s*[:|\\-–]+\\s*", RegexOption.IGNORE_CASE)
 private val CHANNEL_TAG_BRACKET = Regex("^\\s*[\\[(](UHD|4K|FHD|HD|SD|HEVC)[\\])]\\s*", RegexOption.IGNORE_CASE)
 private val CHANNEL_TAG_END = Regex("\\s*[\\[(|\\-–]?\\s*\\b(UHD|4K|FHD|HD|SD|HEVC)\\b\\s*[\\])]?\\s*$", RegexOption.IGNORE_CASE)
@@ -146,7 +148,7 @@ fun combineChannelQualities(channels: List<app.embertv.data.Channel>, qualityCho
     val groups = LinkedHashMap<String, MutableList<Pair<app.embertv.data.Channel, String?>>>()
     for (c in channels) {
         val (clean, tag) = channelParts(c.name)
-        val key = clean.lowercase().replace(Regex("[^a-z0-9]"), "")
+        val key = clean.lowercase().replace(NOT_ALNUM, "")
         groups.getOrPut(key.ifEmpty { "id" + c.streamId }) { ArrayList() }.add(c to tag)
     }
     val want = when (qualityChoice) {
@@ -174,7 +176,7 @@ fun combineChannelQualities(channels: List<app.embertv.data.Channel>, qualityCho
 }
 
 /** The same for every quality copy of a channel: "FHD : BBC One" and "SD : BBC ONE" both give "bbcone". */
-fun channelKey(name: String): String = channelParts(name).first.lowercase().replace(Regex("[^a-z0-9]"), "")
+fun channelKey(name: String): String = channelParts(name).first.lowercase().replace(NOT_ALNUM, "")
 
 /** Each channel once (see [combineChannelQualities]), as plain channels. */
 fun channelsOnce(channels: List<app.embertv.data.Channel>, qualityChoice: String, combine: Boolean = true): List<app.embertv.data.Channel> =
