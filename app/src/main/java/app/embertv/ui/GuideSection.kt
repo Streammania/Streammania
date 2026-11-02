@@ -546,13 +546,7 @@ internal fun GuideRow(
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                if (channel.num > 0) channel.num.toString() else "",
-                style = Txt.Caption.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
-                color = Ember.Faint,
-                maxLines = 1,
-                modifier = Modifier.width(32.dp),
-            )
+            // No provider numbers (often five digits): the room goes to the channel's name instead.
             ChannelLogo(
                 channel.icon,
                 channel.name,
