@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         // Back after a while: pick up any new films and series.
         vm.appVisible = true
+        vm.appResumed()
         vm.updateFilmsAndSeriesIfDue()
         if (isTv) {
             vm.remoteKeys = { key -> pressFromPhone(key) }

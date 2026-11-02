@@ -1845,8 +1845,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return false
     }
 
+    /** Coming back to the app: straight to where you were, never the screensaver. */
+    fun appResumed() {
+        screensaver = false
+        screensaverTarget = null
+        lastActivity = android.os.SystemClock.uptimeMillis()
+    }
+
     /** Starts the screensaver after a while without button presses, except during playback and pop-ups. */
     fun checkIdle() {
+        // Never while the app is in the background: it would be waiting, already on, when you came back.
+        if (!appVisible) {
+            lastActivity = android.os.SystemClock.uptimeMillis()
+            return
+        }
         if (screensaver || screensaverMinutes == 0) return
         val busy = repo == null || pickingProfile || playerOpen || dueReminder != null || update != null
         if (busy) {
