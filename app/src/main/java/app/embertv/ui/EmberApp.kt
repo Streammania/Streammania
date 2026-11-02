@@ -278,16 +278,7 @@ private fun UpdateDialog(vm: AppViewModel) {
         ) {
             // Apple style: the app's icon, a clear title, the versions, then one white button.
             Spacer(Modifier.height(if (isTv) 16.dp else 8.dp))
-            Box(
-                Modifier
-                    .size(64.dp)
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
-                    .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF2C2C33), Color(0xFF141418))))
-                    .glassSurface(androidx.compose.foundation.shape.RoundedCornerShape(16.dp), Color.Transparent),
-                contentAlignment = Alignment.Center,
-            ) {
-                androidx.compose.material3.Icon(EmberIcons.Play, contentDescription = null, tint = Ember.Accent, modifier = Modifier.size(30.dp))
-            }
+            EmberMark(64.dp)
             Spacer(Modifier.height(14.dp))
             Text("Update available", style = Txt.Title.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold))
             Spacer(Modifier.height(10.dp))

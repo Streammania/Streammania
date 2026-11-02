@@ -1,25 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Streammania app icon: a rounded play mark on a warm glow. -->
+<!-- Streammania app icon: the Ember mark, an outlined play button glowing orange to red with a hollow centre. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#26FF7A3D"
-        android:pathData="M54,20 A34,34 0 1,1 53.99,20 Z" />
-    <path android:pathData="M42,36 L42,72 Q42,78 47.14,74.91 L76.86,57.09 Q82,54 76.86,50.91 L47.14,33.09 Q42,30 42,36 Z">
+    <path android:pathData="M42,34 L76,54 L42,74 Z" android:strokeWidth="7" android:strokeLineJoin="round">
         <aapt:attr name="android:fillColor">
-            <gradient
-                android:type="linear"
-                android:startX="42"
-                android:startY="30"
-                android:endX="82"
-                android:endY="78"
-                android:startColor="#FFFFC27A"
-                android:centerColor="#FFFF7A3D"
-                android:endColor="#FFE0442A" />
+            <gradient android:type="linear" android:startX="42" android:startY="34" android:endX="76" android:endY="74"
+                android:startColor="#FFFFB547" android:centerColor="#FFFF6A2B" android:endColor="#FFE8362A" />
+        </aapt:attr>
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear" android:startX="42" android:startY="34" android:endX="76" android:endY="74"
+                android:startColor="#FFFFB547" android:centerColor="#FFFF6A2B" android:endColor="#FFE8362A" />
         </aapt:attr>
     </path>
+    <path android:fillColor="#FF1C1C21" android:strokeColor="#FF1C1C21" android:strokeWidth="2" android:strokeLineJoin="round"
+        android:pathData="M48.5,45.5 L62,54 L48.5,62.5 Z" />
 </vector>

@@ -1,5 +1,6 @@
 package app.embertv.ui
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -233,24 +234,55 @@ fun LoginScreen(vm: AppViewModel) {
     }
 }
 
+/** The brand's warm glow: amber through orange to red. */
+val EmberGradient = listOf(Color(0xFFFFB547), Color(0xFFFF6A2B), Color(0xFFE8362A))
+
+/**
+ * The Ember mark: an outlined play button glowing orange to red with a hollow centre, on a small
+ * dark glass tile. The same mark as the app icon and the Fire TV banner.
+ */
+@Composable
+fun EmberMark(size: androidx.compose.ui.unit.Dp) {
+    Box(
+        Modifier
+            .size(size)
+            .clip(RoundedCornerShape(size * 0.24f))
+            .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF2C2C33), Color(0xFF121216))))
+            .border(1.dp, Color(0x24FFFFFF), RoundedCornerShape(size * 0.24f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.foundation.Canvas(Modifier.size(size * 0.62f)) {
+            val w = this.size.width
+            val brush = androidx.compose.ui.graphics.Brush.linearGradient(EmberGradient, start = androidx.compose.ui.geometry.Offset(w * 0.2f, 0f), end = androidx.compose.ui.geometry.Offset(w * 0.9f, w))
+            val outer = androidx.compose.ui.graphics.Path().apply {
+                moveTo(w * 0.27f, w * 0.15f); lineTo(w * 0.86f, w * 0.5f); lineTo(w * 0.27f, w * 0.85f); close()
+            }
+            val round = androidx.compose.ui.graphics.drawscope.Stroke(width = w * 0.12f, join = androidx.compose.ui.graphics.StrokeJoin.Round)
+            drawPath(outer, brush)
+            drawPath(outer, brush, style = round)
+            val inner = androidx.compose.ui.graphics.Path().apply {
+                moveTo(w * 0.39f, w * 0.37f); lineTo(w * 0.62f, w * 0.5f); lineTo(w * 0.39f, w * 0.63f); close()
+            }
+            drawPath(inner, Color(0xFF1E1E24))
+            drawPath(inner, Color(0xFF1E1E24), style = androidx.compose.ui.graphics.drawscope.Stroke(width = w * 0.04f, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+        }
+    }
+}
+
 @Composable
 fun Wordmark(large: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        androidx.compose.material3.Icon(
-            EmberIcons.Play,
-            contentDescription = null,
-            tint = Ember.Text,
-            modifier = Modifier.size(if (large) 28.dp else 20.dp),
-        )
-        Spacer(Modifier.width(if (large) 8.dp else 5.dp))
+        EmberMark(if (large) 40.dp else 30.dp)
+        Spacer(Modifier.width(if (large) 12.dp else 9.dp))
         Text(
             buildAnnotatedString {
                 append("stream")
-                withStyle(SpanStyle(color = Ember.Accent)) { append("mania") }
+                // "mania" glows from amber to red, like the mark.
+                withStyle(SpanStyle(brush = androidx.compose.ui.graphics.Brush.horizontalGradient(EmberGradient))) { append("mania") }
             },
             fontSize = if (large) 30.sp else 21.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = (-0.5).sp,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = (if (large) -1.0 else -0.7).sp,
             color = Ember.Text,
             maxLines = 1,
             softWrap = false,
