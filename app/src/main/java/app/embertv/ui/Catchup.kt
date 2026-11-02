@@ -63,11 +63,20 @@ fun CatchupScreen(vm: AppViewModel, channel: Channel) {
                     IconCircleButton(EmberIcons.Back, "Back", glass = true, onClick = { vm.pop() })
                     Spacer(Modifier.width(10.dp))
                 }
-                ChannelLogo(channel.icon, channel.name, Modifier.size(width = if (isTv) 72.dp else 56.dp, height = if (isTv) 48.dp else 38.dp))
+                // The logo in a frosted tile, like the channel lists.
+                Box(
+                    Modifier
+                        .size(width = if (isTv) 76.dp else 60.dp, height = if (isTv) 50.dp else 40.dp)
+                        .glassSurface(RoundedCornerShape(12.dp), Color(0x14FFFFFF))
+                        .padding(5.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ChannelLogo(channel.icon, channel.name, Modifier.fillMaxSize())
+                }
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(channel.name, style = if (isTv) Txt.Title else Txt.Headline, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("Catch-up TV", style = Txt.Label, color = Ember.Text)
+                    Text("CATCH-UP TV", style = Txt.Caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim)
+                    Text(channelParts(channel.name).first, style = if (isTv) Txt.LargeTitle else Txt.Title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             Spacer(Modifier.height(if (isTv) 20.dp else 14.dp))
@@ -119,7 +128,8 @@ fun DayChip(text: String, selected: Boolean, focusKey: String, autoFocus: Boolea
         focusKey = focusKey,
         shape = RoundedCornerShape(19.dp),
         focusedScale = 1.06f,
-        color = if (selected) Color(0x40FFFFFF) else Color(0x14FFFFFF),
+        // The chosen day bold on frosted glass; the one you're on white, like the app's other chips.
+        color = if (selected) Color(0x33FFFFFF) else Color(0x14FFFFFF),
         focusedColor = Color.White,
         autoFocus = autoFocus,
         onClick = onClick,
@@ -133,6 +143,7 @@ fun DayChip(text: String, selected: Boolean, focusKey: String, autoFocus: Boolea
                     selected -> Ember.Text
                     else -> Ember.Dim
                 },
+                fontWeight = if (selected || focused) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Medium,
                 maxLines = 1,
             )
         }
@@ -147,8 +158,9 @@ private fun CatchupRow(p: Programme, now: Long, focusKey: String, autoFocus: Boo
         focusKey = focusKey,
         shape = RoundedCornerShape(14.dp),
         focusedScale = 1.02f,
-        color = Ember.Card,
+        color = Color(0x0FFFFFFF),
         focusedColor = Color.White,
+        glassEdge = false,
         autoFocus = autoFocus,
         onClick = onClick,
     ) { focused ->
