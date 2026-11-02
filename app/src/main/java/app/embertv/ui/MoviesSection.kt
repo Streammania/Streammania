@@ -78,7 +78,18 @@ private fun MovieGrid(vm: AppViewModel, repo: Repository, categoryId: String, gr
         favSnapshot?.map { it.toMovie() } ?: repo.movies(categoryId)
     }
     when (val r = load) {
-        is LoadResult.Loading -> SkeletonPosters(modifier)
+        is LoadResult.Loading -> Box(modifier) {
+            SkeletonPosters(Modifier.fillMaxSize())
+            // The whole-library pages download every film at once, which can take a while.
+            if (categoryId == ALL || categoryId == RECENT) {
+                Text(
+                    "Getting all your films… big libraries can take a minute.",
+                    style = Txt.Caption,
+                    color = Ember.Dim,
+                    modifier = Modifier.align(Alignment.TopStart).padding(start = 10.dp),
+                )
+            }
+        }
         is LoadResult.Err -> ErrorView(r.message, modifier) { vm.reload() }
         is LoadResult.Ok -> {
             val movies = r.value

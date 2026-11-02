@@ -3,6 +3,7 @@ package app.embertv.data
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
@@ -137,8 +138,22 @@ class Repository(val client: XtreamClient) {
     private val seriesGate = kotlinx.coroutines.sync.Mutex()
 
     private suspend fun rawAllChannels(): List<Channel> = allLive ?: liveGate.withLock { allLive ?: client.channels(null).also { allLive = it } }
-    private suspend fun rawAllMovies(): List<Movie> = allMovies ?: moviesGate.withLock { allMovies ?: client.movies(null).also { allMovies = it } }
-    private suspend fun rawAllSeries(): List<Series> = allSeries ?: seriesGate.withLock { allSeries ?: client.series(null).also { allSeries = it } }
+    private suspend fun rawAllMovies(): List<Movie> = allMovies ?: moviesGate.withLock { allMovies ?: fullList { client.movies(null) }.also { allMovies = it } }
+    private suspend fun rawAllSeries(): List<Series> = allSeries ?: seriesGate.withLock { allSeries ?: fullList { client.series(null) }.also { allSeries = it } }
+
+    /**
+     * A whole film or series list, with a time limit: some providers send these very slowly (or stall
+     * after lots of requests), which left pages on grey placeholders for good. Now they say so and can
+     * be tried again.
+     */
+    private suspend fun <T> fullList(fetch: suspend () -> List<T>): List<T> {
+        // The download runs on its own so the wait can give up even while a slow read is still blocked.
+        val job = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).async { fetch() }
+        return kotlinx.coroutines.withTimeoutOrNull(150_000L) { job.await() } ?: run {
+            job.cancel()
+            throw XtreamException("Your provider is taking too long to send the full list. Try again in a minute.")
+        }
+    }
 
     /** Channels the profile has hidden. The cached lists keep them; only what's handed out leaves them out. */
     var hiddenChannels: Set<Int> = emptySet()
