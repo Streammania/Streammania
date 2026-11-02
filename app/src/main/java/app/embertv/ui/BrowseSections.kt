@@ -520,6 +520,15 @@ fun SettingsSection(vm: AppViewModel) {
                     if (vm.channelsOnce) "FHD, HD and SD copies show as one channel" else "Every copy your provider lists is shown",
                     focusKey = "set:channelsonce",
                 ) { vm.toggleChannelsOnce() }
+                if (vm.channelsOnce && vm.qualityChoice == "ask") {
+                    SettingRow(
+                        "Remember quality per channel",
+                        if (vm.rememberChannelQuality) "On" else "Off",
+                        if (vm.rememberChannelQuality) "Channels open in the quality you last picked. Turn off to forget"
+                        else "Ask every time, even for channels you've picked before",
+                        focusKey = "set:rememberquality",
+                    ) { vm.toggleRememberChannelQuality() }
+                }
                 if (!kids) {
                     val favChannels = vm.favourites.count { it.type == app.embertv.data.ContentType.LIVE }
                     val hiddenCount = vm.hiddenChannels.size

@@ -1214,6 +1214,7 @@ fun LivePlayerScreen(vm: AppViewModel, channelsIn: List<Channel>, startIndex: In
                     onCopy = { c ->
                         optionsOpen = false
                         if (c.streamId != channel.streamId) {
+                            vm.noteChannelQuality(c)
                             channels[index] = c
                             restart++
                             vm.notify("Watching in ${channelParts(c.name).second ?: "another quality"}")

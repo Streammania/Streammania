@@ -570,6 +570,27 @@ class Prefs(context: Context) {
             sp.edit().putInt("screen_direction", value).apply()
         }
 
+    /** Remember the quality picked for each channel and open it that way next time (off unless turned on). */
+    var rememberChannelQuality: Boolean
+        get() = sp.getBoolean(pk("remember_channel_quality"), false)
+        set(value) {
+            sp.edit().putBoolean(pk("remember_channel_quality"), value).apply()
+        }
+
+    /** The quality tag ("FHD", "HD"…, or "" for plain) last picked for each channel, by its clean name. */
+    fun channelQuality(name: String): String? =
+        runCatching { JSONObject(sp.getString(pk("channel_quality"), "{}") ?: "{}").optString(name, "").takeIf { it.isNotEmpty() } }.getOrNull()
+
+    fun setChannelQuality(name: String, tag: String) {
+        val o = runCatching { JSONObject(sp.getString(pk("channel_quality"), "{}") ?: "{}") }.getOrElse { JSONObject() }
+        o.put(name, tag)
+        sp.edit().putString(pk("channel_quality"), o.toString()).apply()
+    }
+
+    fun clearChannelQualities() {
+        sp.edit().remove(pk("channel_quality")).apply()
+    }
+
     /** Whether the next episode starts by itself after a short countdown. */
     var autoplayNext: Boolean
         get() = sp.getBoolean(pk("autoplay_next"), true)

@@ -1595,7 +1595,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (ch != null) {
                 viewModelScope.launch {
                     val copies = channelCopies(ch)
-                    if (copies.size > 1) {
+                    // Remembered from last time (Settings → Remember quality per channel).
+                    val remembered = if (rememberChannelQuality) prefs.channelQuality(channelParts(ch.name).first) else null
+                    val match = remembered?.let { tag -> copies.firstOrNull { (channelParts(it.name).second ?: "SD") == tag } }
+                    if (copies.size > 1 && match != null) {
+                        val list = screen.channels.toMutableList()
+                        list[screen.index] = match
+                        pushNow(Screen.PlayLive(list, screen.index))
+                    } else if (copies.size > 1) {
                         choosingVersion = VersionChoice.ForChannel(channelParts(ch.name).first, copies, screen.channels, screen.index)
                     } else {
                         pushNow(screen)
@@ -1607,10 +1614,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         pushNow(screen)
     }
 
+    /** Remember the quality picked for each channel (off unless turned on in Settings). */
+    var rememberChannelQuality by mutableStateOf(prefs.rememberChannelQuality)
+        private set
+
+    fun toggleRememberChannelQuality() {
+        rememberChannelQuality = !rememberChannelQuality
+        prefs.rememberChannelQuality = rememberChannelQuality
+        // Turning it off forgets the choices, so turning it back on starts fresh.
+        if (!rememberChannelQuality) prefs.clearChannelQualities()
+    }
+
+    /** Notes [copy]'s quality for its channel, when remembering is on. */
+    fun noteChannelQuality(copy: Channel) {
+        if (!rememberChannelQuality) return
+        val (name, tag) = channelParts(copy.name)
+        prefs.setChannelQuality(name, tag ?: "SD")
+    }
+
     /** Opens the copy picked from the quality card, in place of the one in the list. */
     fun playChannelCopy(choice: VersionChoice.ForChannel, i: Int) {
         choosingVersion = null
         val copy = choice.copies.getOrNull(i) ?: return
+        noteChannelQuality(copy)
         val list = choice.channels.toMutableList()
         if (choice.index in list.indices) list[choice.index] = copy
         pushNow(Screen.PlayLive(list, choice.index))
