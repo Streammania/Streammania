@@ -906,7 +906,8 @@ fun PlayerGuide(
     val windowStart = (now / 1800) * 1800 + step * 1800L
     val windowEnd = windowStart + WINDOW_MINUTES * 60
     val state = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = (current - 4).coerceAtLeast(0))
-    BackHandler(enabled = details == null) { if (step != 0) step = 0 else onClose() }
+    BackHandler(enabled = details == null && !pickingGroup) { if (step != 0) step = 0 else onClose() }
+    BackHandler(enabled = pickingGroup) { pickingGroup = false }
 
     Box(Modifier.fillMaxSize()) {
         // A soft shade towards the bottom so the panel stands out; the picture stays clear above it.
@@ -969,13 +970,49 @@ fun PlayerGuide(
                 }
             }
         }
+        // Changing group: a frosted list slides in over the left of the guide, with the picture still
+        // playing above, rather than a full-screen pop-up that hides it.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = pickingGroup && onGroupPicked != null && categories.isNotEmpty(),
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInHorizontally { -it / 10 },
+            exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(170)),
+            modifier = Modifier.align(Alignment.BottomStart),
+        ) {
+            val rail = remember { FocusRequester() }
+            val railState = androidx.compose.foundation.lazy.rememberLazyListState(
+                initialFirstVisibleItemIndex = (categories.indexOfFirst { it.id == groupId } - 3).coerceAtLeast(0)
+            )
+            LaunchedEffect(Unit) {
+                delay(60)
+                runCatching { rail.requestFocus() }
+            }
+            Column(
+                Modifier
+                    .fillMaxHeight(0.68f)
+                    .padding(start = 28.dp, bottom = 22.dp)
+                    .width(300.dp)
+                    .glassSurface(RoundedCornerShape(26.dp), Color(0xF2141418))
+                    .padding(start = 14.dp, end = 14.dp, top = 18.dp)
+            ) {
+                Text("CHANNEL GROUP", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim, modifier = Modifier.padding(start = 12.dp))
+                Spacer(Modifier.height(6.dp))
+                CategoryRail(
+                    categories = categories,
+                    selectedId = groupId,
+                    state = railState,
+                    keyPrefix = "playerguide",
+                    onFocusCategory = {},
+                    onSelectCategory = { c ->
+                        pickingGroup = false
+                        onGroupPicked?.invoke(c.id)
+                    },
+                    modifier = Modifier.weight(1f).focusRequester(rail),
+                    width = 272.dp,
+                )
+                RemoteHints(listOf(Hint("OK", "Show"), Hint("BACK", "Close")), Modifier.padding(start = 10.dp, top = 6.dp, bottom = 14.dp))
+            }
+        }
     }
     val d = details
     if (d != null) ProgrammeDialog(vm, d, channels) { details = null }
-    if (pickingGroup && onGroupPicked != null && categories.isNotEmpty()) {
-        GroupPicker(categories, groupId.orEmpty(), onDismiss = { pickingGroup = false }) {
-            pickingGroup = false
-            onGroupPicked(it)
-        }
-    }
 }
