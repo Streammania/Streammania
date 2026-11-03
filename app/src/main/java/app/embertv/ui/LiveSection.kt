@@ -138,13 +138,17 @@ private fun ChannelList(
 fun rememberProgrammes(repo: Repository, streamId: Int): List<Programme>? {
     // A quality copy without its own listings reads them from the copy that has them.
     val id = EpgAlias.of(streamId)
-    val programmes by produceState(repo.cachedEpg(id), repo, id) {
-        if (value == null) {
-            delay(250)
-            value = repo.epg(id)
+    // A fresh state for each channel: otherwise moving to another channel kept the last one's
+    // listings (and the preview panel said "No listings" for channels that have them).
+    return androidx.compose.runtime.key(repo, id) {
+        val programmes by produceState(repo.cachedEpg(id), repo, id) {
+            if (value == null) {
+                delay(250)
+                value = repo.epg(id)
+            }
         }
+        programmes
     }
-    return programmes
 }
 
 @Composable

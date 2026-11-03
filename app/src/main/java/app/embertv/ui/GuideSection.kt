@@ -787,13 +787,16 @@ internal fun DayPicker(now: Long, showing: Long, onDismiss: () -> Unit, onPick: 
 @Composable
 fun rememberFullProgrammes(repo: Repository, streamId: Int): List<Programme>? {
     val id = EpgAlias.of(streamId)
-    val programmes by produceState(repo.cachedFullEpg(id), repo, id) {
-        if (value == null) {
-            delay(300)
-            value = repo.fullEpg(id)
+    // A fresh state for each channel, so one channel's guide is never shown for another.
+    return androidx.compose.runtime.key(repo, id) {
+        val programmes by produceState(repo.cachedFullEpg(id), repo, id) {
+            if (value == null) {
+                delay(300)
+                value = repo.fullEpg(id)
+            }
         }
+        programmes
     }
-    return programmes
 }
 
 private class DialogAction(
