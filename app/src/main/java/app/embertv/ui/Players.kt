@@ -1424,10 +1424,7 @@ private fun LiveInfoBar(
                 Spacer(Modifier.width(if (isTv) 24.dp else 16.dp))
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (channel.num > 0) {
-                            Text("${channel.num}", style = Txt.Headline, color = Ember.Dim)
-                            Spacer(Modifier.width(12.dp))
-                        }
+                        // No provider number (often five digits): just the channel's name, as everywhere else.
                         Text(channelParts(channel.name).first, style = Txt.Title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                         if (isFavourite) {
                             Spacer(Modifier.width(10.dp))

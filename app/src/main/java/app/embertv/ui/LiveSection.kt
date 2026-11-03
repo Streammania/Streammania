@@ -143,7 +143,9 @@ fun rememberProgrammes(repo: Repository, streamId: Int): List<Programme>? {
     return androidx.compose.runtime.key(repo, id) {
         val programmes by produceState(repo.cachedEpg(id), repo, id) {
             if (value == null) {
-                delay(250)
+                // A short pause first: rows you scroll straight past are gone before they ask, so the
+                // ones you stop on aren't queued behind them (the provider only takes a couple at once).
+                delay(400)
                 value = repo.epg(id)
             }
         }
