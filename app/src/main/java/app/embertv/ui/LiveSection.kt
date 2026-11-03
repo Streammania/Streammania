@@ -185,13 +185,7 @@ fun ChannelRow(
         val dim = if (focused) Color(0xFF55555C) else Ember.Dim
         val faint = if (focused) Color(0xFF77777C) else Ember.Faint
         Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            // Phones: no long provider numbers, just the logo and name, as in Apple's TV app.
-            if (!phone) Text(
-                if (channel.num > 0) channel.num.toString() else "",
-                style = Txt.Caption.copy(fontSize = 11.sp),
-                color = faint,
-                modifier = Modifier.width(38.dp),
-            )
+            // No long provider numbers (TV or phone), just the logo and name, as in Apple's TV app.
             // Logos in a small frosted tile, so every shape and size lines up.
             Box(
                 Modifier
