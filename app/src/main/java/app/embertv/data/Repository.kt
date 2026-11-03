@@ -455,8 +455,11 @@ class Repository(val client: XtreamClient) {
                 emptyList()
             }
         }
-        epg[streamId] = EpgEntry(nowSeconds(), items)
-        return items
+        // In time order (some providers don't send it that way), and an empty answer (often a failed
+        // or throttled request) is only remembered for a minute rather than fifteen.
+        val sorted = items.sortedBy { it.start }
+        epg[streamId] = EpgEntry(if (sorted.isEmpty()) nowSeconds() - 840 else nowSeconds(), sorted)
+        return sorted
     }
 
     fun cachedFullEpg(streamId: Int): List<Programme>? {

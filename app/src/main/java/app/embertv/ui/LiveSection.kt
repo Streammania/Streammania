@@ -251,76 +251,97 @@ private fun ChannelPreview(vm: AppViewModel, repo: Repository, channel: Channel?
     Column(
         modifier
             .padding(top = 8.dp, bottom = 24.dp)
-            .glassSurface(RoundedCornerShape(20.dp), Ember.Panel)
-            .padding(18.dp)
+            .glassSurface(RoundedCornerShape(24.dp), Ember.Panel)
+            .padding(14.dp)
     ) {
         if (channel == null) {
-            Text("Pick a channel", style = Txt.Headline)
-            Spacer(Modifier.height(8.dp))
-            Text("Choose a channel to see what's on.", style = Txt.Body, color = Ember.Dim)
+            LivePreview(vm, null, Modifier.fillMaxWidth())
+            Spacer(Modifier.height(16.dp))
+            Text("Pick a channel", style = Txt.Headline.copy(fontWeight = FontWeight.Bold), modifier = Modifier.padding(horizontal = 4.dp))
+            Spacer(Modifier.height(6.dp))
+            Text("Its picture and what's on show here.", style = Txt.Body, color = Ember.Dim, modifier = Modifier.padding(horizontal = 4.dp))
         } else {
             PreviewDetails(vm, repo, channel)
         }
         Spacer(Modifier.weight(1f))
-        Box(Modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
             RemoteHints(listOf(Hint("OK", "Watch"), Hint("HOLD OK", "Favourite")))
         }
     }
 }
 
+/**
+ * Apple TV style: the live picture on top, then the channel, what's on in big bold type, its time
+ * and progress, a short description, and a little timeline of what's later.
+ */
 @Composable
 private fun PreviewDetails(vm: AppViewModel, repo: Repository, channel: Channel) {
     val now = LocalNow.current
-    val programmes = rememberProgrammes(repo, channel.streamId)
-    val onNow = programmes?.firstOrNull { it.isLive(now) }
-    // The live picture with rounded corners and the programme's name over its foot, like Apple TV.
-    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))) {
-        LivePreview(vm, channel, Modifier.fillMaxWidth())
-        Column(
-            Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color(0xD9000000))))
-                .padding(start = 12.dp, end = 12.dp, top = 26.dp, bottom = 10.dp)
-        ) {
-            if (onNow != null) {
-                Box(Modifier.clip(RoundedCornerShape(4.dp)).background(Ember.Live).padding(horizontal = 5.dp, vertical = 1.dp)) {
-                    Text("LIVE", style = Txt.Caption.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold), color = Color.White)
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(onNow.title, style = Txt.Label.copy(fontWeight = FontWeight.Bold), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Text(
-                channelParts(channel.name).first + (onNow?.let { "  ·  until ${formatClock(it.end)}" } ?: ""),
-                style = Txt.Caption,
-                color = Color(0xFFCFCFD4),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+    val short = rememberProgrammes(repo, channel.streamId)
+    // The quick listings sometimes miss what's on now; the full day's guide fills the gap.
+    val needFull = short != null && short.none { it.isLive(now) }
+    val full = if (needFull) rememberFullProgrammes(repo, channel.streamId) else null
+    val programmes = when {
+        full != null && full.any { it.end > now } -> full.sortedBy { it.start }
+        else -> short
     }
-    Spacer(Modifier.height(14.dp))
-    when {
-        programmes == null -> SkeletonLines(Modifier.fillMaxWidth(), widths = listOf(0.7f, 0.9f, 0.6f, 0.8f))
-        programmes.none { it.end > now } -> Text("No guide information for this channel.", style = Txt.Body, color = Ember.Faint)
-        else -> {
-            // What's on now is on the picture; underneath, a short timeline of what's later.
-            if (onNow != null && onNow.description.isNotBlank()) {
-                Text(onNow.description, style = Txt.Caption.copy(fontSize = 13.sp), color = Ember.Dim, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(14.dp))
+    val onNow = programmes?.firstOrNull { it.isLive(now) }
+    LivePreview(vm, channel, Modifier.fillMaxWidth())
+    Spacer(Modifier.height(16.dp))
+    Column(Modifier.padding(horizontal = 4.dp)) {
+        val (name, tag) = channelParts(channel.name)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(name.uppercase(), style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp), color = Ember.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            if (tag != null) {
+                Spacer(Modifier.width(8.dp))
+                ChannelQualityTag(tag)
             }
-            val later = programmes.filter { it.start >= now }.take(3)
-            if (later.isNotEmpty()) {
-                Text("LATER", style = Txt.Caption.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp), color = Ember.Faint)
-                Spacer(Modifier.height(8.dp))
-                later.forEachIndexed { i, p ->
+        }
+        Spacer(Modifier.height(6.dp))
+        when {
+            programmes == null || (needFull && full == null) -> SkeletonLines(Modifier.fillMaxWidth(), widths = listOf(0.85f, 0.6f, 0.9f, 0.7f))
+            onNow == null && programmes.none { it.end > now } -> {
+                Text("No listings", style = Txt.Title.copy(fontWeight = FontWeight.Bold))
+                Spacer(Modifier.height(4.dp))
+                Text("Your provider has no guide for this channel right now. It still plays.", style = Txt.Caption.copy(fontSize = 14.sp), color = Ember.Dim)
+            }
+            else -> {
+                if (onNow != null) {
+                    Text(onNow.title, style = Txt.Title.copy(fontWeight = FontWeight.Bold), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(formatClock(p.start), style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = Ember.Dim, modifier = Modifier.width(48.dp))
-                        Box(Modifier.size(6.dp).clip(CircleShape).background(Color(0x80FFFFFF)))
-                        Spacer(Modifier.width(10.dp))
-                        Text(p.title, style = Txt.Label.copy(fontSize = 15.sp), color = Ember.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(Ember.Live))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "${formatClock(onNow.start)} – ${formatClock(onNow.end)}  ·  ${((onNow.end - now) / 60).coerceAtLeast(1)} min left",
+                            style = Txt.Caption.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium),
+                            color = Ember.Dim,
+                            maxLines = 1,
+                        )
                     }
-                    if (i < later.lastIndex) Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x2EFFFFFF))) {
+                        Box(Modifier.fillMaxHeight().fillMaxWidth(onNow.progress(now)).background(Color.White))
+                    }
+                    if (onNow.description.isNotBlank()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(onNow.description, style = Txt.Caption.copy(fontSize = 13.sp, lineHeight = 18.sp), color = Ember.Dim, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
+                val later = programmes.filter { it.start >= now }.take(3)
+                if (later.isNotEmpty()) {
+                    Text("LATER", style = Txt.Caption.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp), color = Ember.Faint)
+                    Spacer(Modifier.height(8.dp))
+                    later.forEachIndexed { i, p ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(formatClock(p.start), style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = Ember.Dim, modifier = Modifier.width(48.dp))
+                            Box(Modifier.size(6.dp).clip(CircleShape).background(Color(0x80FFFFFF)))
+                            Spacer(Modifier.width(10.dp))
+                            Text(p.title, style = Txt.Label.copy(fontSize = 15.sp), color = Ember.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (i < later.lastIndex) Spacer(Modifier.height(10.dp))
+                    }
                 }
             }
         }
