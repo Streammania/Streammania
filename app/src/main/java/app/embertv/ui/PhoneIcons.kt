@@ -321,6 +321,20 @@ object EmberIcons {
         moveTo(12.5f, 12f); lineTo(18f, 12f); lineTo(18f, 16f); lineTo(12.5f, 16f); close()
     }
 
+    /** Download: an arrow into a tray (copy settings to this phone). */
+    val Download = outline("download") {
+        moveTo(12f, 4f); lineTo(12f, 15f)
+        moveTo(7.5f, 10.5f); lineTo(12f, 15f); lineTo(16.5f, 10.5f)
+        moveTo(4f, 16f); lineTo(4f, 20f); lineTo(20f, 20f); lineTo(20f, 16f)
+    }
+
+    /** Microphone (voice search). */
+    val Mic = outline("mic") {
+        moveTo(9f, 6f); arcTo(3f, 3f, 0f, false, true, 15f, 6f); lineTo(15f, 11f); arcTo(3f, 3f, 0f, false, true, 9f, 11f); close()
+        moveTo(5.5f, 10.5f); arcTo(6.5f, 6.5f, 0f, false, false, 18.5f, 10.5f)
+        moveTo(12f, 17f); lineTo(12f, 21f)
+    }
+
     /** Add: a plus. */
     val Plus = outline("plus") {
         moveTo(12f, 5f); lineTo(12f, 19f)

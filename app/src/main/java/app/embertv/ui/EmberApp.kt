@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
@@ -95,6 +96,7 @@ fun EmberApp(vm: AppViewModel, isTv: Boolean) {
                     }
                 }
                 vm.dueReminder?.let { ReminderDialog(vm, it) }
+                vm.dueKickoff?.let { KickoffDialog(vm, it) }
 
                 // TV screensaver after a few idle minutes
                 if (isTv) {
@@ -218,6 +220,42 @@ private fun ReminderDialog(vm: AppViewModel, r: app.embertv.data.Reminder) {
             Column(Modifier.width(if (isTv) 340.dp else 400.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SheetOption("Watch now", focusKey = "reminder:watch", autoFocus = isTv, primary = true) { vm.watchReminder(r) }
                 SheetOption("Dismiss", focusKey = "reminder:dismiss") { vm.dismissReminder() }
+            }
+        }
+    }
+}
+
+/** Just before one of your teams kicks off: watch it, or carry on. */
+@Composable
+private fun KickoffDialog(vm: AppViewModel, m: app.embertv.data.Match) {
+    val isTv = LocalIsTv.current
+    val now = LocalNow.current
+    Dialog(onDismissRequest = { vm.dismissKickoff() }) {
+        DialogBackdropBlur()
+        Column(
+            Modifier
+                .width(if (isTv) 520.dp else 440.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(dialogPanelColor())
+                .padding(if (isTv) 8.dp else 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(56.dp)) { NetImage(m.home.logo, Modifier.fillMaxSize(), ContentScale.Fit) }
+                Text("v", style = Txt.Title, color = Ember.Faint, modifier = Modifier.padding(horizontal = 22.dp))
+                Box(Modifier.size(56.dp)) { NetImage(m.away.logo, Modifier.fillMaxSize(), ContentScale.Fit) }
+            }
+            Spacer(Modifier.height(16.dp))
+            val mins = ((m.kickoff / 1000 - now) / 60).coerceAtLeast(0)
+            SheetTitle(
+                "${m.home.shortName} v ${m.away.shortName}",
+                eyebrow = if (mins > 0) "Kick-off in $mins min" else "Kicking off now",
+                subtitle = "${m.league.name}  ·  ${formatClock(m.kickoff / 1000)}",
+            )
+            Spacer(Modifier.height(24.dp))
+            Column(Modifier.width(if (isTv) 340.dp else 400.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SheetOption("Watch", focusKey = "kickoff:watch", autoFocus = isTv, primary = true) { vm.watchKickoff(m) }
+                SheetOption("Not now", focusKey = "kickoff:dismiss") { vm.dismissKickoff() }
             }
         }
     }

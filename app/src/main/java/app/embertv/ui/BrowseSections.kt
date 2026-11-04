@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -326,14 +327,33 @@ fun SearchSection(vm: AppViewModel) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        Box(Modifier.padding(start = edgePadding(), end = edgePadding(), top = LocalContentPadding.current.calculateTopPadding() + 10.dp).fillMaxWidth().widthIn(max = 620.dp)) {
+        val voice = rememberVoiceInput("Say a channel, film or series") { vm.searchQuery = it }
+        Row(
+            Modifier.padding(start = edgePadding(), end = edgePadding(), top = LocalContentPadding.current.calculateTopPadding() + 10.dp).fillMaxWidth().widthIn(max = 680.dp),
+        ) {
             EntryRow(
                 label = "",
                 value = vm.searchQuery,
                 placeholder = "Search channels, films, series and what's on TV",
                 focusKey = "search:box",
+                modifier = Modifier.weight(1f),
                 onClick = { editing = true },
             )
+            if (voice != null) {
+                Spacer(Modifier.width(10.dp))
+                FocusBox(
+                    modifier = Modifier.size(56.dp),
+                    focusKey = "search:mic",
+                    shape = CircleShape,
+                    color = Color(0x17FFFFFF),
+                    focusedColor = Color.White,
+                    onClick = voice,
+                ) { focused ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(EmberIcons.Mic, "Search by voice", tint = if (focused) Color.Black else Ember.Text, modifier = Modifier.size(24.dp))
+                    }
+                }
+            }
         }
         val ch = channels
         val mv = movies
@@ -477,6 +497,14 @@ fun SettingsSection(vm: AppViewModel) {
                     "Goal alerts, and their games on Home",
                     focusKey = "set:teams",
                 ) { pickingTeams = true }
+                if (vm.followedTeams.isNotEmpty()) {
+                    SettingRow(
+                        "Kick-off reminders",
+                        if (vm.kickoffReminders) "On" else "Off",
+                        "Asks if you want to watch five minutes before your team plays",
+                        focusKey = "set:kickoff",
+                    ) { vm.toggleKickoffReminders() }
+                }
                 if (!kids) {
                     SettingRow(
                         "Live sport on Home",

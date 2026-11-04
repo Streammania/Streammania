@@ -579,6 +579,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     /** The match "Where's it on?" is searching for. */
     var findingMatch by mutableStateOf<Match?>(null)
+    /** A followed team's game about to kick off, asking whether to watch. */
+    var dueKickoff by mutableStateOf<Match?>(null)
+        private set
+    private val kickoffsShown = HashSet<String>()
+    var kickoffReminders by mutableStateOf(prefs.kickoffReminders)
+        private set
+
+    fun toggleKickoffReminders() {
+        kickoffReminders = !kickoffReminders
+        prefs.kickoffReminders = kickoffReminders
+        if (!kickoffReminders) dueKickoff = null
+    }
+
+    fun dismissKickoff() {
+        dueKickoff = null
+    }
+
+    /** Goes straight to a channel showing the game if one's already been found, else looks for it. */
+    fun watchKickoff(m: Match) {
+        dueKickoff = null
+        val hits = liveSport.firstOrNull { it.match.id == m.id }?.hits.orEmpty()
+        if (hits.isNotEmpty()) playFound(hits, 0) else findingMatch = m
+    }
     private var teamWatcher: kotlinx.coroutines.Job? = null
 
     /** Programmes this profile wants a nudge about, soonest first. */
@@ -768,6 +791,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         Txt.scale = prefs.textScale.coerceIn(1f, 1.25f)
         HintsSetting.show = prefs.showHints
         autoplayNext = prefs.autoplayNext
+        kickoffReminders = prefs.kickoffReminders
+        dueKickoff = null
         homeExtras = null
         applyCategoryFilter()
         reloadToken++
@@ -960,9 +985,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             override suspend fun key(key: String) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                remoteKeys?.invoke(key)
+                // Words said or typed on the phone's remote open Search on the TV.
+                if (key.startsWith("search:")) searchFromPhone(key.removePrefix("search:")) else remoteKeys?.invoke(key)
                 Unit
             }
+
+            override suspend fun exportSettings(): org.json.JSONObject = prefs.exportSettings()
+
+            override suspend fun importSettings(o: org.json.JSONObject) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                if (prefs.importSettings(o)) {
+                    reloadSettings()
+                    notify("Settings copied from your phone")
+                }
+                Unit
+            }
+
+            override suspend fun syncProgress(o: org.json.JSONObject): org.json.JSONObject =
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    prefs.mergeProgress(o)
+                    reloadProgress()
+                    prefs.exportProgress()
+                }
         })
         tvLink = server
         tvLinkJob = viewModelScope.launch {
@@ -1115,6 +1158,120 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             castTarget = p
             notify("Paired. Playing on ${tv.name}")
         }
+    }
+
+    private fun searchFromPhone(text: String) {
+        val q = text.trim().take(80)
+        if (q.isEmpty() || repo == null || pickingProfile) return
+        userActivity(wake = true)
+        while (stack.size > 1) pop()
+        tab = Tabs.SEARCH
+        searchQuery = q
+    }
+
+    /** On the phone: searches on the paired TV. */
+    fun searchOnTv(text: String) {
+        val target = castTarget ?: return
+        val q = text.trim()
+        if (q.isEmpty()) return
+        viewModelScope.launch {
+            if (!TvLinkClient.key(target.tv, target.token, "search:$q")) notify("Couldn't reach ${target.tv.name}")
+            else notify("Searching for \"$q\" on ${target.tv.name}")
+        }
+    }
+
+    // ---- Settings and progress between phone and TV ----
+
+    /** Busy copying settings, so the buttons can say so. */
+    var copyingSettings by mutableStateOf(false)
+        private set
+
+    fun copySettingsFromTv(p: PairedTv) {
+        if (copyingSettings) return
+        copyingSettings = true
+        viewModelScope.launch {
+            val o = TvLinkClient.getSettings(p.tv, p.token)
+            copyingSettings = false
+            if (o == null) {
+                notify("Couldn't reach ${p.tv.name}. Update Streammania on the TV if it's open")
+                return@launch
+            }
+            prefs.importSettings(o)
+            reloadSettings()
+            syncProgressNow(p)
+            notify("Settings copied from ${p.tv.name}")
+        }
+    }
+
+    fun sendSettingsToTv(p: PairedTv) {
+        if (copyingSettings) return
+        copyingSettings = true
+        viewModelScope.launch {
+            val ok = TvLinkClient.putSettings(p.tv, p.token, prefs.exportSettings())
+            copyingSettings = false
+            if (ok) syncProgressNow(p)
+            notify(if (ok) "Settings sent to ${p.tv.name}" else "Couldn't reach ${p.tv.name}. Update Streammania on the TV if it's open")
+        }
+    }
+
+    private suspend fun syncProgressNow(p: PairedTv): Boolean {
+        val merged = TvLinkClient.syncProgress(p.tv, p.token, prefs.exportProgress()) ?: return false
+        prefs.mergeProgress(merged)
+        reloadProgress()
+        return true
+    }
+
+    private var progressSyncedAt = 0L
+
+    /**
+     * Swaps Continue Watching with paired TVs, quietly, so a film paused on the TV carries on here
+     * and the other way round. Runs when the app opens and when a video is closed.
+     */
+    fun syncProgressWithTvs(force: Boolean = false) {
+        if (tvLink != null || pairedTvs.isEmpty()) return
+        val nowMs = android.os.SystemClock.elapsedRealtime()
+        if (!force && nowMs - progressSyncedAt < 20_000L) return
+        progressSyncedAt = nowMs
+        val tvs = pairedTvs.toList()
+        viewModelScope.launch { for (p in tvs) syncProgressNow(p) }
+    }
+
+    /** Re-reads Continue Watching after another device's progress was merged in. */
+    private fun reloadProgress() {
+        history.clear()
+        history.addAll(prefs.history)
+        watchedKeys = prefs.watched
+    }
+
+    /** Re-reads every setting after another device's were copied in. */
+    private fun reloadSettings() {
+        streamFormat = prefs.streamFormat
+        userAgent = prefs.userAgent
+        invertZap = prefs.invertZap
+        compactLists = prefs.compactLists
+        livePreview = prefs.livePreview
+        mergeVersions = prefs.mergeVersions
+        repo?.mergeVersions = mergeVersions
+        qualityChoice = prefs.qualityChoice
+        externalPlayer = prefs.externalPlayer
+        screensaverMinutes = prefs.screensaverMinutes
+        channelsOnce = prefs.channelsOnce
+        movieSort = prefs.movieSort
+        seriesSort = prefs.seriesSort
+        rememberChannelQuality = prefs.rememberChannelQuality
+        timeshiftOn = prefs.timeshiftMinutes > 0
+        startOn = prefs.startOn
+        sportOnHome = prefs.sportOnHome
+        if (prefs.tmdbKey != tmdbKey) {
+            tmdbKey = prefs.tmdbKey
+            tmdb = tmdbKey.takeIf { it.isNotBlank() }?.let { app.embertv.data.Tmdb(it) }
+        }
+        profiles.clear()
+        profiles.addAll(prefs.profiles)
+        if (profiles.isEmpty()) profiles.add(Profile(MAIN_PROFILE, "Me", 0))
+        val keep = profiles.firstOrNull { it.id == profile?.id } ?: profiles.first()
+        activate(keep)
+        if (!sportOnHome) liveSport = emptyList()
     }
 
     fun forgetTv(p: PairedTv) {
@@ -1672,7 +1829,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun pop() {
         if (stack.size <= 1) return
+        val wasVod = stack.last() is Screen.PlayVod
         stack.removeAt(stack.lastIndex)
+        // Give the player a moment to save where it stopped, then share it with the TV.
+        if (wasVod) viewModelScope.launch { kotlinx.coroutines.delay(1_500); syncProgressWithTvs(force = true) }
         restoreClaimed = false
         restoreFocusKey = if (returnKeys.isNotEmpty()) returnKeys.removeAt(returnKeys.lastIndex) else null
     }
@@ -1873,6 +2033,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Coming back to the app: straight to where you were, never the screensaver. */
     fun appResumed() {
+        syncProgressWithTvs()
         screensaver = false
         screensaverTarget = null
         lastActivity = android.os.SystemClock.uptimeMillis()
@@ -2701,7 +2862,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Called every few seconds: pops up the next reminder whose programme is about to start. */
     fun checkReminders(now: Long) {
-        if (dueReminder != null || repo == null || pickingProfile) return
+        if (repo == null || pickingProfile) return
+        checkKickoffs(now)
+        if (dueReminder != null) return
         val expired = reminders.filter { it.end <= now }
         val due = reminders.firstOrNull { it.start - 60 <= now && it.end > now }
         if (expired.isEmpty() && due == null) return
@@ -2715,6 +2878,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissReminder() {
         dueReminder = null
+    }
+
+    /** Five minutes before one of your teams kicks off, asks whether to watch. */
+    private fun checkKickoffs(now: Long) {
+        if (!kickoffReminders || dueKickoff != null || dueReminder != null || findingMatch != null) return
+        val nowMs = now * 1000
+        val m = teamMatches.firstOrNull {
+            it.state == MatchState.UPCOMING && it.kickoff - nowMs in -2 * 60_000L..5 * 60_000L && it.id !in kickoffsShown
+        } ?: return
+        kickoffsShown.add(m.id)
+        userActivity(wake = true)
+        dueKickoff = m
     }
 
     /** Switches to the reminder's channel, within its category so up/down still change channel. */

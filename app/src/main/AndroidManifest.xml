@@ -18,6 +18,10 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" android:mimeType="video/*" />
         </intent>
+        <!-- Voice search: lets the app see the phone's voice typing (Android 11+). -->
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
     </queries>
 
     <application

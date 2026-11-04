@@ -164,7 +164,7 @@ class Prefs(context: Context) {
         val e = sp.edit()
         for (key in sp.all.keys) {
             val belongs = if (id == MAIN_PROFILE) {
-                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next") ||
+                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next", "kickoff_reminders") ||
                     key.startsWith("pos_") || key.startsWith("last_ep_")
             } else {
                 key.startsWith("p_${id}_")
@@ -591,6 +591,13 @@ class Prefs(context: Context) {
         sp.edit().remove(pk("channel_quality")).apply()
     }
 
+    /** Whether a card pops up just before one of this profile's teams kicks off. */
+    var kickoffReminders: Boolean
+        get() = sp.getBoolean(pk("kickoff_reminders"), true)
+        set(value) {
+            sp.edit().putBoolean(pk("kickoff_reminders"), value).apply()
+        }
+
     /** Whether the next episode starts by itself after a short countdown. */
     var autoplayNext: Boolean
         get() = sp.getBoolean(pk("autoplay_next"), true)
@@ -605,7 +612,139 @@ class Prefs(context: Context) {
         set(value) {
             sp.edit().putStringSet(pk("home_hidden"), value).apply()
         }
+
+    // ---- Copying between devices on the home network ----
+
+    /** Settings that belong to this device or account and never leave it. */
+    private fun keepsLocal(key: String): Boolean =
+        key in DEVICE_ONLY || isProgressKey(key)
+
+    private fun isProgressKey(key: String): Boolean {
+        val base = if (key.startsWith("p_")) key.substringAfter('_').substringAfter('_') else key
+        return base == "history" || base == "watched" || base.startsWith("pos_") || base.startsWith("last_ep_")
+    }
+
+    /** Every copyable setting, with its type, so another device can take it as it is. */
+    fun exportSettings(): JSONObject {
+        val o = JSONObject()
+        for ((k, v) in sp.all) {
+            if (keepsLocal(k) || v == null) continue
+            val t = when (v) {
+                is String -> JSONObject().put("t", "s").put("v", v)
+                is Boolean -> JSONObject().put("t", "b").put("v", v)
+                is Int -> JSONObject().put("t", "i").put("v", v)
+                is Long -> JSONObject().put("t", "l").put("v", v)
+                is Float -> JSONObject().put("t", "f").put("v", v.toDouble())
+                is Set<*> -> JSONObject().put("t", "set").put("v", JSONArray(v.map { it.toString() }))
+                else -> null
+            } ?: continue
+            o.put(k, t)
+        }
+        return JSONObject().put("settings", o).put("version", 1)
+    }
+
+    /** Takes another device's settings. This device's sign-in, pairings and progress are left alone. */
+    fun importSettings(from: JSONObject): Boolean {
+        val o = from.optJSONObject("settings") ?: return false
+        val e = sp.edit()
+        // Settings the other device has at their default are cleared here too, so both end up the same.
+        for (k in sp.all.keys) if (!keepsLocal(k) && !o.has(k)) e.remove(k)
+        for (k in o.keys()) {
+            if (keepsLocal(k)) continue
+            val item = o.optJSONObject(k) ?: continue
+            when (item.optString("t")) {
+                "s" -> e.putString(k, item.optString("v"))
+                "b" -> e.putBoolean(k, item.optBoolean("v"))
+                "i" -> e.putInt(k, item.optInt("v"))
+                "l" -> e.putLong(k, item.optLong("v"))
+                "f" -> e.putFloat(k, item.optDouble("v").toFloat())
+                "set" -> {
+                    val arr = item.optJSONArray("v") ?: JSONArray()
+                    e.putStringSet(k, (0 until arr.length()).map { arr.optString(it) }.toSet())
+                }
+            }
+        }
+        e.commit()
+        return true
+    }
+
+    /** Continue Watching and what's been finished, for every profile. */
+    fun exportProgress(): JSONObject {
+        val profilesOut = JSONObject()
+        for (id in progressProfileIds()) {
+            profilesOut.put(
+                id,
+                JSONObject()
+                    .put("history", runCatching { JSONArray(sp.getString(pkFor(id, "history"), "[]") ?: "[]") }.getOrElse { JSONArray() })
+                    .put("watched", runCatching { JSONArray(sp.getString(pkFor(id, "watched"), "[]") ?: "[]") }.getOrElse { JSONArray() })
+            )
+        }
+        return JSONObject().put("profiles", profilesOut)
+    }
+
+    private fun progressProfileIds(): Set<String> {
+        val ids = linkedSetOf(MAIN_PROFILE)
+        for (k in sp.all.keys) {
+            if (k.startsWith("p_") && (k.endsWith("_history") || k.endsWith("_watched"))) ids.add(k.removePrefix("p_").substringBeforeLast('_'))
+        }
+        return ids
+    }
+
+    /**
+     * Merges another device's progress into this one: for each film or series, whichever device
+     * watched it most recently wins, so pausing on the TV and opening the phone carries on there.
+     * Something finished on one device drops off the other's Continue Watching.
+     */
+    fun mergeProgress(remote: JSONObject) {
+        val profilesIn = remote.optJSONObject("profiles") ?: return
+        val e = sp.edit()
+        for (id in profilesIn.keys()) {
+            val theirs = profilesIn.optJSONObject(id) ?: continue
+            val mineHistory = runCatching { JSONArray(sp.getString(pkFor(id, "history"), "[]") ?: "[]") }.getOrElse { JSONArray() }
+            val mineWatched = runCatching { JSONArray(sp.getString(pkFor(id, "watched"), "[]") ?: "[]") }.getOrElse { JSONArray() }
+            val theirHistory = theirs.optJSONArray("history") ?: JSONArray()
+            val theirWatched = theirs.optJSONArray("watched") ?: JSONArray()
+            fun keys(a: JSONArray, field: String?) = (0 until a.length()).mapNotNull {
+                if (field == null) a.optString(it).ifEmpty { null } else a.optJSONObject(it)?.optString(field)?.ifEmpty { null }
+            }.toSet()
+            val mineKeys = keys(mineHistory, "key")
+            val theirKeys = keys(theirHistory, "key")
+            val mineDone = keys(mineWatched, null)
+            val theirDone = keys(theirWatched, null)
+            // Finished over there and not started again there: stale here. And the other way round.
+            val drop = (theirDone - theirKeys) + (mineDone - mineKeys)
+            val all = ArrayList<JSONObject>()
+            for (a in listOf(mineHistory, theirHistory)) for (i in 0 until a.length()) a.optJSONObject(i)?.let { all.add(it) }
+            val seen = HashSet<String>()
+            val merged = all
+                .filter { it.optString("key") !in drop }
+                .sortedByDescending { it.optLong("at") }
+                .filter { h ->
+                    val group = if (h.optString("type") == ContentType.SERIES.name && h.optInt("sid") > 0) "s:${h.optInt("sid")}" else h.optString("key")
+                    seen.add(group)
+                }
+                .take(30)
+            val out = JSONArray()
+            for (h in merged) {
+                out.put(h)
+                val key = h.optString("key")
+                val pos = h.optLong("pos")
+                if (pos >= 60_000L) e.putLong(pkFor(id, "pos_$key"), pos)
+                val sid = h.optInt("sid")
+                if (h.optString("type") == ContentType.SERIES.name && sid > 0) e.putInt(pkFor(id, "last_ep_$sid"), h.optInt("id"))
+            }
+            for (key in drop) e.remove(pkFor(id, "pos_$key"))
+            e.putString(pkFor(id, "history"), out.toString())
+            val watchedOut = JSONArray()
+            for (w in (mineDone + theirDone).toList().takeLast(2000)) watchedOut.put(w)
+            e.putString(pkFor(id, "watched"), watchedOut.toString())
+        }
+        e.commit()
+    }
 }
+
+/** Kept on each device: sign-in, pairings and how this screen is held. */
+private val DEVICE_ONLY = setOf("server", "user", "pass", "paired_tvs", "tv_tokens", "screen_direction", "last_profile", "match_frame_rate", "hdr_hint", "picture_mode", "external_player")
 
 /** Rows Home leaves off until switched on: Home starts with six rows instead of eleven. */
 val DEFAULT_HOME_HIDDEN = setOf("recent-channels", "fav-channels", "live", "movies", "series")

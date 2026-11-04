@@ -187,6 +187,45 @@ fun CastSheet(vm: AppViewModel) {
                 }
                 SheetOption("Enter the TV's address", focusKey = "cast:manual", subtitle = "If your TV doesn't show up") { typing = true }
             }
+            val tv = target ?: paired.firstOrNull()
+            if (tv != null) {
+                Spacer(Modifier.height(22.dp))
+                SheetSection("Settings", Modifier.fillMaxWidth())
+                // Replacing settings asks for a second tap, so it can't happen by accident.
+                var armed by remember { mutableStateOf<String?>(null) }
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SheetOption(
+                        if (vm.copyingSettings) "Copying…" else "Copy from ${tv.tv.name}",
+                        focusKey = "cast:copy-from",
+                        subtitle = if (armed == "from") "Tap again to replace this phone's settings" else "Profiles, favourites, layout and preferences",
+                        leading = { dark -> Icon(EmberIcons.Download, null, tint = if (dark) Color.Black else Ember.Text, modifier = Modifier.size(22.dp)) },
+                    ) {
+                        if (armed == "from") {
+                            armed = null
+                            vm.copySettingsFromTv(tv)
+                        } else armed = "from"
+                    }
+                    SheetOption(
+                        if (vm.copyingSettings) "Copying…" else "Send to ${tv.tv.name}",
+                        focusKey = "cast:copy-to",
+                        subtitle = if (armed == "to") "Tap again to replace the TV's settings" else "Your sign-in and picture settings stay as they are",
+                        leading = { dark -> Icon(EmberIcons.Tv, null, tint = if (dark) Color.Black else Ember.Text, modifier = Modifier.size(22.dp)) },
+                    ) {
+                        if (armed == "to") {
+                            armed = null
+                            vm.sendSettingsToTv(tv)
+                        } else armed = "to"
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Up Next stays in step by itself: pause on the TV and carry on here.",
+                    style = Txt.Caption,
+                    color = Ember.Faint,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
     if (typing) {
@@ -262,6 +301,32 @@ fun RemoteScreen(vm: AppViewModel) {
                 RemoteRound("rewind", onPress = vm::pressRemote) { Icon(EmberIcons.Rewind, "Rewind", tint = Ember.Text, modifier = Modifier.size(26.dp)) }
                 ChannelRocker(onPress = vm::pressRemote)
                 RemoteRound("forward", onPress = vm::pressRemote) { Icon(EmberIcons.FastForward, "Fast forward", tint = Ember.Text, modifier = Modifier.size(26.dp)) }
+            }
+            Spacer(Modifier.height(30.dp))
+            // Search on the TV by voice (or typing): Fire TV keeps its own mic button for Alexa.
+            var typingSearch by remember { mutableStateOf(false) }
+            var searchText by remember { mutableStateOf("") }
+            val voice = rememberVoiceInput("Search on ${target.tv.name}") { vm.searchOnTv(it) }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (voice != null) {
+                    PillButton("Say it", icon = EmberIcons.Mic, primary = true) { voice() }
+                }
+                PillButton("Type it", icon = EmberIcons.Search, primary = voice == null) {
+                    searchText = ""
+                    typingSearch = true
+                }
+            }
+            if (typingSearch) {
+                TextEntryDialog(
+                    title = "Search on ${target.tv.name}",
+                    value = searchText,
+                    onValueChange = { searchText = it },
+                    placeholder = "Channel, film or series",
+                    onDone = {
+                        typingSearch = false
+                        vm.searchOnTv(searchText)
+                    },
+                )
             }
             Spacer(Modifier.weight(1f))
             Text(

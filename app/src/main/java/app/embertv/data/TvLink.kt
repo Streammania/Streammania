@@ -38,6 +38,11 @@ class TvLinkServer(
         fun authorised(token: String): Boolean
         suspend fun play(spec: JSONObject): String?
         suspend fun key(key: String)
+        /** All copyable settings, for a phone backing up or copying them. */
+        suspend fun exportSettings(): JSONObject
+        suspend fun importSettings(o: JSONObject)
+        /** Merges the phone's watch progress in and returns the merged result. */
+        suspend fun syncProgress(o: JSONObject): JSONObject
     }
 
     @Volatile private var socket: ServerSocket? = null
@@ -123,7 +128,7 @@ class TvLinkServer(
             if (k == "content-length") length = v.toIntOrNull() ?: 0
             if (k == "x-streammania-token") token = v
         }
-        val body = ByteArray(length.coerceIn(0, 2_000_000))
+        val body = ByteArray(length.coerceIn(0, 8_000_000))
         var read = 0
         while (read < body.size) {
             val n = input.read(body, read, body.size - read)
@@ -169,6 +174,12 @@ class TvLinkServer(
                         handler.key(json.optString("key"))
                         respond("200 OK", JSONObject().put("ok", true))
                     }
+                    "/settings/get" -> respond("200 OK", handler.exportSettings())
+                    "/settings/put" -> {
+                        handler.importSettings(json)
+                        respond("200 OK", JSONObject().put("ok", true))
+                    }
+                    "/progress/sync" -> respond("200 OK", handler.syncProgress(json))
                     else -> respond("404 Not Found", JSONObject().put("error", "Unknown"))
                 }
             }
@@ -244,6 +255,21 @@ object TvLinkClient {
     }
 
     suspend fun key(tv: FoundTv, token: String, key: String): Boolean = call(tv, "/key", JSONObject().put("key", key), token).first == 200
+
+    /** The TV's settings, or null if it couldn't be reached (or is on an older version). */
+    suspend fun getSettings(tv: FoundTv, token: String): JSONObject? {
+        val (status, o) = call(tv, "/settings/get", JSONObject(), token)
+        return if (status == 200) o else null
+    }
+
+    suspend fun putSettings(tv: FoundTv, token: String, settings: JSONObject): Boolean =
+        call(tv, "/settings/put", settings, token).first == 200
+
+    /** Sends this device's progress and gets back the merged progress, or null. */
+    suspend fun syncProgress(tv: FoundTv, token: String, progress: JSONObject): JSONObject? {
+        val (status, o) = call(tv, "/progress/sync", progress, token)
+        return if (status == 200) o else null
+    }
 }
 
 /** Finds Streammania TVs on the home network. Results arrive on the main thread. */

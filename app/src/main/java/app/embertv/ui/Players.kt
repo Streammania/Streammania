@@ -113,6 +113,7 @@ import androidx.media3.ui.PlayerView
 import app.embertv.data.Channel
 import androidx.compose.runtime.produceState
 import app.embertv.data.ContentType
+import app.embertv.data.Favourite
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -2289,6 +2290,7 @@ fun VodPlayerScreen(vm: AppViewModel, items: List<VodItem>, startIndex: Int, sta
                     },
                     onOpenElsewhere = { vm.openElsewhere(Screen.PlayVod(items, current, exo.currentPosition)) },
                     onDismiss = { panel = null },
+                    item = items.getOrNull(current),
                 )
             }
         }
@@ -2767,6 +2769,7 @@ private fun BoxScope.TrackPanel(
     onQuality: (AppViewModel.QualityChoice) -> Unit = {},
     onOpenElsewhere: () -> Unit,
     onDismiss: () -> Unit,
+    item: VodItem? = null,
 ) {
     val isTv = LocalIsTv.current
     // Read fresh each time it opens, so the ticks match what's playing now.
@@ -2826,6 +2829,21 @@ private fun BoxScope.TrackPanel(
             }
             if (audio.size <= 1) PanelNote("This one only comes in one language.")
             if (all || more) Spacer(Modifier.height(18.dp))
+        }
+        if ((kind == "more" || all) && item != null && item.contentId > 0 && !item.key.startsWith(CATCHUP_PREFIX)) {
+            // The film, or the whole series for an episode, into Favourites (My List).
+            val sid = item.seriesId
+            val fav = if (sid != null) {
+                Favourite(ContentType.SERIES, sid, item.title, item.seriesCover.ifBlank { item.image })
+            } else {
+                Favourite(ContentType.MOVIE, item.contentId, item.title, item.image.ifBlank { item.seriesCover }, ext = item.ext)
+            }
+            val on = vm.isFavourite(fav.type, fav.id)
+            SheetSection(if (sid != null) "This series" else "This film")
+            ZapAction(if (on) EmberIcons.StarFilled else EmberIcons.Star, if (on) "Remove from favourites" else "Add to favourites", "") {
+                vm.toggleFavourite(fav)
+            }
+            Spacer(Modifier.height(18.dp))
         }
         if (kind == "more" || all) {
             SheetSection("Picture")
