@@ -197,6 +197,7 @@ fun CastSheet(vm: AppViewModel) {
                     SheetOption(
                         if (vm.copyingSettings) "Copying…" else "Copy from ${tv.tv.name}",
                         focusKey = "cast:copy-from",
+                        primary = armed == "from",
                         subtitle = if (armed == "from") "Tap again to replace this phone's settings" else "Profiles, favourites, layout and preferences",
                         leading = { dark -> Icon(EmberIcons.Download, null, tint = if (dark) Color.Black else Ember.Text, modifier = Modifier.size(22.dp)) },
                     ) {
@@ -208,6 +209,7 @@ fun CastSheet(vm: AppViewModel) {
                     SheetOption(
                         if (vm.copyingSettings) "Copying…" else "Send to ${tv.tv.name}",
                         focusKey = "cast:copy-to",
+                        primary = armed == "to",
                         subtitle = if (armed == "to") "Tap again to replace the TV's settings" else "Your sign-in and picture settings stay as they are",
                         leading = { dark -> Icon(EmberIcons.Tv, null, tint = if (dark) Color.Black else Ember.Text, modifier = Modifier.size(22.dp)) },
                     ) {

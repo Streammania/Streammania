@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +36,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.togetherWith
@@ -240,17 +243,22 @@ private fun KickoffDialog(vm: AppViewModel, m: app.embertv.data.Match) {
                 .padding(if (isTv) 8.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(56.dp)) { NetImage(m.home.logo, Modifier.fillMaxSize(), ContentScale.Fit) }
-                Text("v", style = Txt.Title, color = Ember.Faint, modifier = Modifier.padding(horizontal = 22.dp))
-                Box(Modifier.size(56.dp)) { NetImage(m.away.logo, Modifier.fillMaxSize(), ContentScale.Fit) }
-            }
-            Spacer(Modifier.height(16.dp))
+            // A small scoreboard, like the goal alerts: crest tiles either side of the kick-off time.
             val mins = ((m.kickoff / 1000 - now) / 60).coerceAtLeast(0)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                KickoffCrest(m.home.logo, m.home.shortName)
+                Column(Modifier.padding(horizontal = 14.dp).widthIn(max = 130.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(formatClock(m.kickoff / 1000), style = Txt.Title.copy(fontWeight = FontWeight.Bold))
+                    Spacer(Modifier.height(4.dp))
+                    Text(m.league.name, style = Txt.Caption, color = Ember.Faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                KickoffCrest(m.away.logo, m.away.shortName)
+            }
+            Spacer(Modifier.height(18.dp))
             SheetTitle(
                 "${m.home.shortName} v ${m.away.shortName}",
                 eyebrow = if (mins > 0) "Kick-off in $mins min" else "Kicking off now",
-                subtitle = "${m.league.name}  ·  ${formatClock(m.kickoff / 1000)}",
+                subtitle = "One of your teams is about to play",
             )
             Spacer(Modifier.height(24.dp))
             Column(Modifier.width(if (isTv) 340.dp else 400.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -258,6 +266,20 @@ private fun KickoffDialog(vm: AppViewModel, m: app.embertv.data.Match) {
                 SheetOption("Not now", focusKey = "kickoff:dismiss") { vm.dismissKickoff() }
             }
         }
+    }
+}
+
+@Composable
+private fun KickoffCrest(logo: String, name: String) {
+    Column(Modifier.width(92.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.size(72.dp).glassSurface(RoundedCornerShape(18.dp), Color(0x14FFFFFF)),
+            contentAlignment = Alignment.Center,
+        ) {
+            NetImage(logo, Modifier.fillMaxSize().padding(12.dp), ContentScale.Fit)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(name, style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = Ember.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
