@@ -166,6 +166,20 @@ fun EmberApp(vm: AppViewModel, isTv: Boolean) {
                     vm.findingMatch?.let { MatchFinderDialog(vm, it) }
                 }
 
+                // Just signed in: a moment with the logo, then Home fades in.
+                LaunchedEffect(vm.welcoming) {
+                    if (vm.welcoming) {
+                        delay(1_800)
+                        vm.welcoming = false
+                    }
+                }
+                AnimatedVisibility(
+                    visible = vm.welcoming && vm.repo != null,
+                    enter = fadeIn(androidx.compose.animation.core.tween(0)),
+                    exit = fadeOut(androidx.compose.animation.core.tween(500)),
+                    modifier = Modifier.fillMaxSize(),
+                ) { WelcomeCard() }
+
                 NoticeOverlay(vm)
             }
         }

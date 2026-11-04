@@ -682,6 +682,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val acc = Account(normalizeServer(server), username.trim(), password.trim())
                 val info = XtreamClient(acc, userAgent).authenticate()
                 prefs.account = acc
+                prefs.lastServer = acc.server
+                prefs.lastUser = acc.username
+                welcoming = true
                 startSession(acc, info)
             } catch (e: CancellationException) {
                 throw e
@@ -735,7 +738,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
+    /** Server and username from the last sign-in on this device, for the sign-in boxes. */
+    fun lastSignIn(): Pair<String, String> = prefs.lastServer to prefs.lastUser
+
+    /** True for a moment after signing in: a "getting your channels ready" card fades into Home. */
+    var welcoming by mutableStateOf(false)
+
     fun signOut() {
+        account?.let {
+            prefs.lastServer = it.server
+            prefs.lastUser = it.username
+        }
         prefs.account = null
         account = null
         repo = null

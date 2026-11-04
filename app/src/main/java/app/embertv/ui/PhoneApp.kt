@@ -352,14 +352,16 @@ private fun CategoryChips(spec: ChipsSpec) {
 
 @Composable
 fun PhoneLoginScreen(vm: AppViewModel) {
-    var server by remember { mutableStateOf("") }
-    var user by remember { mutableStateOf("") }
+    val last = remember { vm.lastSignIn() }
+    var server by remember { mutableStateOf(last.first) }
+    var user by remember { mutableStateOf(last.second) }
     var pass by remember { mutableStateOf("") }
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Brush.radialGradient(listOf(Ember.GlowStrong, Ember.Bg), radius = 1200f))
+            .background(Ember.Bg)
+            .background(Brush.radialGradient(listOf(Ember.GlowSoft, Color.Transparent), center = androidx.compose.ui.geometry.Offset(200f, 240f), radius = 1000f))
             .windowInsetsPadding(WindowInsets.safeDrawing)
     ) {
         Column(
@@ -370,13 +372,19 @@ fun PhoneLoginScreen(vm: AppViewModel) {
         ) {
             Wordmark(large = true)
             Spacer(Modifier.height(28.dp))
-            Text("Sign in to your IPTV service", style = Txt.Title)
-            Spacer(Modifier.height(10.dp))
+            Text("Welcome", style = Txt.LargeTitle)
+            Spacer(Modifier.height(6.dp))
             Text(
-                "Enter the Xtream Codes details from your provider. They're saved on this phone only.",
+                "Sign in with the details from your IPTV provider: a server address, username and password.",
                 style = Txt.Body,
                 color = Ember.Dim,
             )
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(EmberIcons.Lock, contentDescription = null, tint = Ember.Dim, modifier = Modifier.size(13.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Saved on this phone only", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = Ember.Dim)
+            }
             Spacer(Modifier.height(28.dp))
             PhoneTextField(
                 label = "Server address",
@@ -402,20 +410,7 @@ fun PhoneLoginScreen(vm: AppViewModel) {
                 onDone = { vm.login(server, user, pass) },
             )
             val error = vm.loginError
-            if (error != null) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 14.dp)
-                        .glassSurface(RoundedCornerShape(14.dp), Color(0x24FF453A))
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(EmberIcons.Alert, contentDescription = null, tint = Ember.Text, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Text(error, style = Txt.Label, color = Ember.Text)
-                }
-            }
+            if (error != null) LoginProblemNote(loginProblem(error, server.isBlank()))
             Spacer(Modifier.height(6.dp))
             PillButton(
                 text = if (vm.loggingIn) "Signing in…" else "Sign in",
@@ -444,7 +439,12 @@ private fun PhoneTextField(
     var reveal by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(12.dp)
     Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-        Text(label, style = Txt.Caption, color = if (focused) Ember.Text else Ember.Dim)
+        Text(
+            label.uppercase(),
+            style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.1.sp),
+            color = if (focused) Ember.Text else Ember.Dim,
+            modifier = Modifier.padding(start = 4.dp),
+        )
         Spacer(Modifier.height(8.dp))
         BasicTextField(
             value = value,

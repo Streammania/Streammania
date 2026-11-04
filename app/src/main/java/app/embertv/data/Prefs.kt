@@ -174,6 +174,18 @@ class Prefs(context: Context) {
         e.apply()
     }
 
+    /** The server and username last signed in with, to fill the boxes after signing out. Never the password. */
+    var lastServer: String
+        get() = sp.getString("last_server", "") ?: ""
+        set(value) {
+            sp.edit().putString("last_server", value).apply()
+        }
+    var lastUser: String
+        get() = sp.getString("last_user", "") ?: ""
+        set(value) {
+            sp.edit().putString("last_user", value).apply()
+        }
+
     var account: Account?
         get() {
             val server = sp.getString("server", null) ?: return null
@@ -770,7 +782,7 @@ class Prefs(context: Context) {
 }
 
 /** Kept on each device: sign-in, pairings and how this screen is held. */
-private val DEVICE_ONLY = setOf("server", "user", "pass", "paired_tvs", "tv_tokens", "screen_direction", "last_profile", "match_frame_rate", "hdr_hint", "picture_mode", "external_player", "last_crash")
+private val DEVICE_ONLY = setOf("server", "user", "pass", "paired_tvs", "tv_tokens", "screen_direction", "last_profile", "match_frame_rate", "hdr_hint", "picture_mode", "external_player", "last_crash", "last_server", "last_user")
 
 /** Rows Home leaves off until switched on: Home starts with six rows instead of eleven. */
 val DEFAULT_HOME_HIDDEN = setOf("recent-channels", "fav-channels", "live", "movies", "series")
