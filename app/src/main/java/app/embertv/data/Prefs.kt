@@ -164,7 +164,7 @@ class Prefs(context: Context) {
         val e = sp.edit()
         for (key in sp.all.keys) {
             val belongs = if (id == MAIN_PROFILE) {
-                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next", "kickoff_reminders") ||
+                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next", "kickoff_reminders", "finished_at") ||
                     key.startsWith("pos_") || key.startsWith("last_ep_")
             } else {
                 key.startsWith("p_${id}_")
@@ -621,7 +621,7 @@ class Prefs(context: Context) {
 
     private fun isProgressKey(key: String): Boolean {
         val base = if (key.startsWith("p_")) key.substringAfter('_').substringAfter('_') else key
-        return base == "history" || base == "watched" || base.startsWith("pos_") || base.startsWith("last_ep_")
+        return base == "history" || base == "watched" || base == "finished_at" || base.startsWith("pos_") || base.startsWith("last_ep_")
     }
 
     /** Every copyable setting, with its type, so another device can take it as it is. */
@@ -677,15 +677,34 @@ class Prefs(context: Context) {
                 JSONObject()
                     .put("history", runCatching { JSONArray(sp.getString(pkFor(id, "history"), "[]") ?: "[]") }.getOrElse { JSONArray() })
                     .put("watched", runCatching { JSONArray(sp.getString(pkFor(id, "watched"), "[]") ?: "[]") }.getOrElse { JSONArray() })
+                    .put("finished", finishedJson(id))
             )
         }
         return JSONObject().put("profiles", profilesOut)
     }
 
+    private fun finishedJson(id: String): JSONObject =
+        runCatching { JSONObject(sp.getString(pkFor(id, "finished_at"), "{}") ?: "{}") }.getOrElse { JSONObject() }
+
+    /** Remembers when a film or episode was finished, so another device's older progress on it is dropped. */
+    fun noteFinished(key: String) {
+        val o = finishedJson(profileId)
+        o.put(key, System.currentTimeMillis())
+        // Only recent ones matter: keep the newest 300.
+        if (o.length() > 300) {
+            val keep = o.keys().asSequence().map { it to o.optLong(it) }.sortedByDescending { it.second }.take(300).toList()
+            val n = JSONObject()
+            for ((k, v) in keep) n.put(k, v)
+            sp.edit().putString(pk("finished_at"), n.toString()).apply()
+            return
+        }
+        sp.edit().putString(pk("finished_at"), o.toString()).apply()
+    }
+
     private fun progressProfileIds(): Set<String> {
         val ids = linkedSetOf(MAIN_PROFILE)
         for (k in sp.all.keys) {
-            if (k.startsWith("p_") && (k.endsWith("_history") || k.endsWith("_watched"))) ids.add(k.removePrefix("p_").substringBeforeLast('_'))
+            if (k.startsWith("p_") && (k.endsWith("_history") || k.endsWith("_watched"))) ids.add(k.removePrefix("p_").substringBefore('_'))
         }
         return ids
     }
@@ -707,17 +726,23 @@ class Prefs(context: Context) {
             fun keys(a: JSONArray, field: String?) = (0 until a.length()).mapNotNull {
                 if (field == null) a.optString(it).ifEmpty { null } else a.optJSONObject(it)?.optString(field)?.ifEmpty { null }
             }.toSet()
-            val mineKeys = keys(mineHistory, "key")
-            val theirKeys = keys(theirHistory, "key")
             val mineDone = keys(mineWatched, null)
             val theirDone = keys(theirWatched, null)
-            // Finished over there and not started again there: stale here. And the other way round.
-            val drop = (theirDone - theirKeys) + (mineDone - mineKeys)
+            // When each was last finished, on either device. Progress older than that is stale.
+            val finished = finishedJson(id)
+            val theirFinished = theirs.optJSONObject("finished") ?: JSONObject()
+            for (k in theirFinished.keys()) if (theirFinished.optLong(k) > finished.optLong(k)) finished.put(k, theirFinished.optLong(k))
+            val drop = HashSet<String>()
             val all = ArrayList<JSONObject>()
             for (a in listOf(mineHistory, theirHistory)) for (i in 0 until a.length()) a.optJSONObject(i)?.let { all.add(it) }
             val seen = HashSet<String>()
             val merged = all
-                .filter { it.optString("key") !in drop }
+                .filter { h ->
+                    val done = finished.optLong(h.optString("key"))
+                    val stale = done > 0 && done >= h.optLong("at")
+                    if (stale) drop.add(h.optString("key"))
+                    !stale
+                }
                 .sortedByDescending { it.optLong("at") }
                 .filter { h ->
                     val group = if (h.optString("type") == ContentType.SERIES.name && h.optInt("sid") > 0) "s:${h.optInt("sid")}" else h.optString("key")
@@ -733,10 +758,11 @@ class Prefs(context: Context) {
                 val sid = h.optInt("sid")
                 if (h.optString("type") == ContentType.SERIES.name && sid > 0) e.putInt(pkFor(id, "last_ep_$sid"), h.optInt("id"))
             }
-            for (key in drop) e.remove(pkFor(id, "pos_$key"))
+            for (key in drop) if (merged.none { it.optString("key") == key }) e.remove(pkFor(id, "pos_$key"))
+            e.putString(pkFor(id, "finished_at"), finished.toString())
             e.putString(pkFor(id, "history"), out.toString())
             val watchedOut = JSONArray()
-            for (w in (mineDone + theirDone).toList().takeLast(2000)) watchedOut.put(w)
+            for (w in (mineDone + theirDone).toList().takeLast(3000)) watchedOut.put(w)
             e.putString(pkFor(id, "watched"), watchedOut.toString())
         }
         e.commit()
@@ -744,7 +770,7 @@ class Prefs(context: Context) {
 }
 
 /** Kept on each device: sign-in, pairings and how this screen is held. */
-private val DEVICE_ONLY = setOf("server", "user", "pass", "paired_tvs", "tv_tokens", "screen_direction", "last_profile", "match_frame_rate", "hdr_hint", "picture_mode", "external_player")
+private val DEVICE_ONLY = setOf("server", "user", "pass", "paired_tvs", "tv_tokens", "screen_direction", "last_profile", "match_frame_rate", "hdr_hint", "picture_mode", "external_player", "last_crash")
 
 /** Rows Home leaves off until switched on: Home starts with six rows instead of eleven. */
 val DEFAULT_HOME_HIDDEN = setOf("recent-channels", "fav-channels", "live", "movies", "series")

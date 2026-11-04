@@ -53,7 +53,8 @@ import app.embertv.data.FoundTv
 @Composable
 fun LinkedTvsDialog(vm: AppViewModel, onDismiss: () -> Unit) {
     val linked = vm.pairedTvs.toList()
-    val fresh = vm.foundTvs.filter { tv -> linked.none { it.tv.name == tv.name } }
+    // Never this TV itself, even if it was seen before its own address was known.
+    val fresh = vm.foundTvs.filter { tv -> tv.address != vm.tvLinkAddress && linked.none { it.tv.name == tv.name } }
     // Unlinking asks for a second press, so it can't happen by accident.
     var armed by remember { mutableStateOf<String?>(null) }
     Dialog(onDismissRequest = onDismiss) {

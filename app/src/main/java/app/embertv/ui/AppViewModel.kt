@@ -254,6 +254,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun markFinished(item: VodItem) {
         if (item.key.startsWith(CATCHUP_PREFIX)) return
         markWatched(item.key)
+        prefs.noteFinished(item.key)
         removeHistory(item.key, notifyUser = false)
         if (item.seriesId != null) queueNextEpisode(item)
     }
@@ -2948,6 +2949,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             it.state == MatchState.UPCOMING && it.kickoff - nowMs in -2 * 60_000L..5 * 60_000L && it.id !in kickoffsShown
         } ?: return
         kickoffsShown.add(m.id)
+        // Already on a channel showing it: no need to ask.
+        val live = stack.last() as? Screen.PlayLive
+        val onNow = live?.channels?.getOrNull(live.index)?.streamId
+        if (onNow != null && liveSport.firstOrNull { it.match.id == m.id }?.hits?.any { it.channel.streamId == onNow } == true) return
         userActivity(wake = true)
         dueKickoff = m
     }
