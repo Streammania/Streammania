@@ -49,6 +49,88 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import app.embertv.data.FoundTv
 
+/** On a TV: other Streammania TVs in the house, linked so Up Next carries on from one to the other. */
+@Composable
+fun LinkedTvsDialog(vm: AppViewModel, onDismiss: () -> Unit) {
+    val linked = vm.pairedTvs.toList()
+    val fresh = vm.foundTvs.filter { tv -> linked.none { it.tv.name == tv.name } }
+    // Unlinking asks for a second press, so it can't happen by accident.
+    var armed by remember { mutableStateOf<String?>(null) }
+    Dialog(onDismissRequest = onDismiss) {
+        DialogBackdropBlur()
+        Column(
+            Modifier
+                .width(560.dp)
+                .heightIn(max = 620.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(dialogPanelColor())
+                .verticalScroll(rememberScrollState())
+                .padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(EmberIcons.Tv, contentDescription = null, tint = Ember.Text, modifier = Modifier.size(44.dp))
+            Spacer(Modifier.height(14.dp))
+            SheetTitle(
+                "Other TVs",
+                eyebrow = "Up Next",
+                subtitle = "Link another Fire TV with Streammania open on the same Wi-Fi. Stop a film on one and carry on from the same point on the other.",
+            )
+            Spacer(Modifier.height(22.dp))
+            Column(Modifier.width(400.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (linked.isNotEmpty()) {
+                    SheetSection("Linked", Modifier.fillMaxWidth())
+                    for (p in linked) {
+                        val seen = vm.foundTvs.any { it.name == p.tv.name }
+                        val key = p.tv.name
+                        SheetOption(
+                            p.tv.name,
+                            focusKey = "tvs:linked:$key",
+                            autoFocus = p == linked.first(),
+                            subtitle = when {
+                                armed == key -> "Press OK again to unlink"
+                                seen -> "Linked · on this Wi-Fi"
+                                else -> "Linked · not seen right now"
+                            },
+                            leading = { dark -> Icon(EmberIcons.Tv, null, tint = if (dark) Color.Black else Ember.Text, modifier = Modifier.size(22.dp)) },
+                            trailing = { dark -> if (armed != key) Icon(EmberIcons.Check, null, tint = if (dark) Color.Black else Ember.Dim, modifier = Modifier.size(20.dp)) },
+                        ) {
+                            if (armed == key) {
+                                armed = null
+                                vm.forgetTv(p)
+                            } else armed = key
+                        }
+                    }
+                    SheetOption("Sync now", focusKey = "tvs:sync", primary = true) { vm.syncTvsNow() }
+                    Spacer(Modifier.height(8.dp))
+                }
+                SheetSection("On this Wi-Fi", Modifier.fillMaxWidth())
+                for (tv in fresh) {
+                    SheetOption(
+                        tv.name,
+                        focusKey = "tvs:new:${tv.name}",
+                        autoFocus = linked.isEmpty() && tv == fresh.first(),
+                        subtitle = "Link this TV",
+                        leading = { dark -> Icon(EmberIcons.Tv, null, tint = if (dark) Color.Black else Ember.Dim, modifier = Modifier.size(22.dp)) },
+                    ) {
+                        onDismiss()
+                        vm.linkTv(tv)
+                    }
+                }
+                if (fresh.isEmpty()) {
+                    Text(
+                        "Looking for other TVs… Open Streammania on the other TV.",
+                        style = Txt.Caption,
+                        color = Ember.Faint,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    )
+                }
+                SheetOption("Done", focusKey = "tvs:done", autoFocus = linked.isEmpty() && fresh.isEmpty(), onClick = onDismiss)
+            }
+        }
+    }
+}
+
 /** On the TV: the code a phone has to type in to pair. */
 @Composable
 fun TvPairingDialog(vm: AppViewModel) {
@@ -66,9 +148,10 @@ fun TvPairingDialog(vm: AppViewModel) {
             Icon(EmberIcons.Tv, contentDescription = null, tint = Ember.Text, modifier = Modifier.size(44.dp))
             Spacer(Modifier.height(14.dp))
             SheetTitle(
-                "Pair with $phone",
-                eyebrow = "Play on TV",
-                subtitle = "Type this code on your phone. It can then send things to this TV and work as its remote.",
+                if (vm.tvPairingFromTv) "Link with $phone" else "Pair with $phone",
+                eyebrow = if (vm.tvPairingFromTv) "Other TVs" else "Play on TV",
+                subtitle = if (vm.tvPairingFromTv) "Enter this code on $phone. The two TVs will then share Up Next."
+                else "Type this code on your phone. It can then send things to this TV and work as its remote.",
             )
             Spacer(Modifier.height(22.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {

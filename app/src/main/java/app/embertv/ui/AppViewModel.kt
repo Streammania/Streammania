@@ -946,11 +946,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startTvLink(name: String) {
         if (tvLink != null) return
+        ownTvName = name
+        // Keeps linked TVs' addresses fresh, and lists other TVs to link with.
+        startFindingTvs()
         val server = TvLinkServer(name, object : TvLinkServer.Handler {
             override suspend fun hello(): org.json.JSONObject = org.json.JSONObject().put("name", name).put("app", "Streammania")
 
-            override suspend fun pairRequested(phone: String) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+            override suspend fun pairRequested(phone: String, fromTv: Boolean) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 val code = (1000 + java.security.SecureRandom().nextInt(9000)).toString()
+                tvPairingFromTv = fromTv
                 tvPairing = phone to code
                 userActivity(wake = true)
                 Unit
@@ -968,7 +972,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     // A phone with film details turned on shares its key so the TV gets them too.
                     val key = extras.optString("tmdbKey")
                     if (key.isNotBlank() && tmdbKey.isBlank()) saveTmdbKey(key)
-                    notify("${p.first} can now control this TV")
+                    // Another TV linking up: it sends a key of its own, so either TV can start a sync.
+                    val back = extras.optString("linkToken")
+                    val at = extras.optString("linkAddress")
+                    if (back.isNotBlank() && at.contains(':')) {
+                        val other = FoundTv(extras.optString("linkName").ifBlank { p.first }, at.substringBeforeLast(':'), at.substringAfterLast(':').toIntOrNull() ?: 8771)
+                        pairedTvs.removeAll { it.tv.name == other.name }
+                        pairedTvs.add(PairedTv(other, back))
+                        savePairedTvs()
+                        notify("Linked with ${other.name}. Up Next is now shared")
+                    } else {
+                        notify("${p.first} can now control this TV")
+                    }
                     token
                 }
 
@@ -1018,12 +1033,38 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stopTvLink() {
+        stopFindingTvs()
         tvLink?.stop()
         tvLink = null
         tvLinkJob?.cancel()
         tvLinkJob = null
         tvPairing = null
         tvLinkAddress = null
+    }
+
+    /** This TV's name on the network, when it's a TV. */
+    private var ownTvName: String? = null
+    /** True while the code on screen is for another TV linking up, not a phone. */
+    var tvPairingFromTv by mutableStateOf(false)
+        private set
+
+    /** On a TV: links with another TV in the house, so Up Next is shared between them. */
+    fun linkTv(tv: FoundTv) {
+        val me = ownTvName ?: return
+        viewModelScope.launch {
+            val error = TvLinkClient.requestPairing(tv, me, fromTv = true)
+            if (error != null) notify(error) else pairingWith = tv
+        }
+    }
+
+    fun syncTvsNow() {
+        if (pairedTvs.isEmpty()) return
+        val tvs = pairedTvs.toList()
+        viewModelScope.launch {
+            var ok = 0
+            for (p in tvs) if (syncProgressNow(p)) ok++
+            notify(if (ok > 0) "Up Next is up to date" else "Couldn't reach ${tvs.first().tv.name}. Is Streammania open on it?")
+        }
     }
 
     /** Where phones can reach this TV, for typing in by hand. */
@@ -1078,7 +1119,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startFindingTvs() {
         if (finder != null) return
-        finder = TvFinder(getApplication()) { list ->
+        finder = TvFinder(getApplication()) { all ->
+            // A TV sees itself on the network too.
+            val me = tvLinkAddress
+            val list = if (me == null) all else all.filter { it.address != me && !(me.startsWith("?") && it.name == ownTvName) }
             foundTvs.clear()
             foundTvs.addAll(list)
             // A TV that moved to a new address on the network keeps its pairing.
@@ -1146,15 +1190,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val extras = org.json.JSONObject()
             if (tmdbKey.isNotBlank()) extras.put("tmdbKey", tmdbKey)
+            val asTv = tvLink != null
+            var back: String? = null
+            if (asTv) {
+                // A key for the other TV to use back, so either one can start a sync.
+                val bytes = ByteArray(18).also { java.security.SecureRandom().nextBytes(it) }
+                back = android.util.Base64.encodeToString(bytes, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
+                prefs.tvTokens = (prefs.tvTokens + back).toList().takeLast(12).toSet()
+                pairedPhoneCount = prefs.tvTokens.size
+                extras.put("linkToken", back).put("linkAddress", tvLinkAddress ?: "").put("linkName", ownTvName ?: "")
+            }
             val token = TvLinkClient.confirmPairing(tv, code, extras)
             if (token == null) {
-                notify("That code didn't match. Try again from Play on TV.")
+                if (back != null) prefs.tvTokens = prefs.tvTokens - back
+                notify(if (asTv) "That code didn't match. Try again from Settings." else "That code didn't match. Try again from Play on TV.")
                 return@launch
             }
             pairedTvs.removeAll { it.tv.name == tv.name }
             val p = PairedTv(tv, token)
             pairedTvs.add(p)
             savePairedTvs()
+            if (asTv) {
+                notify("Linked with ${tv.name}. Up Next is now shared")
+                syncProgressNow(p)
+                return@launch
+            }
             castTarget = p
             notify("Paired. Playing on ${tv.name}")
         }
@@ -1228,7 +1288,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * and the other way round. Runs when the app opens and when a video is closed.
      */
     fun syncProgressWithTvs(force: Boolean = false) {
-        if (tvLink != null || pairedTvs.isEmpty()) return
+        if (pairedTvs.isEmpty()) return
         val nowMs = android.os.SystemClock.elapsedRealtime()
         if (!force && nowMs - progressSyncedAt < 20_000L) return
         progressSyncedAt = nowMs
@@ -3001,6 +3061,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         pickingProfile = profiles.size > 1 || start.locked
         val saved = prefs.account
         if (saved != null) startSession(saved, null)
+        // Up Next with linked TVs (and the TV for a phone), every few minutes while on screen.
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(3 * 60_000L)
+                if (appVisible) syncProgressWithTvs(force = true)
+            }
+        }
         // Check for new films and series now and then while the app is on screen.
         viewModelScope.launch {
             while (true) {

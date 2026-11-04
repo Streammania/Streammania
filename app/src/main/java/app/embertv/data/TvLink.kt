@@ -32,7 +32,7 @@ class TvLinkServer(
 ) {
     interface Handler {
         suspend fun hello(): JSONObject
-        suspend fun pairRequested(phone: String)
+        suspend fun pairRequested(phone: String, fromTv: Boolean)
         /** Returns a token if [code] is the one on screen, else null. */
         suspend fun pairConfirmed(code: String, extras: JSONObject): String?
         fun authorised(token: String): Boolean
@@ -153,7 +153,7 @@ class TvLinkServer(
         when (path) {
             "/hello" -> respond("200 OK", handler.hello())
             "/pair" -> {
-                handler.pairRequested(json.optString("phone").ifBlank { "A phone" }.take(40))
+                handler.pairRequested(json.optString("phone").ifBlank { "A phone" }.take(40), json.optBoolean("tv"))
                 respond("200 OK", JSONObject().put("ok", true))
             }
             "/pair/confirm" -> {
@@ -232,8 +232,8 @@ object TvLinkClient {
 
     suspend fun hello(tv: FoundTv): JSONObject? = call(tv, "/hello", JSONObject(), null).second
 
-    suspend fun requestPairing(tv: FoundTv, phoneName: String): String? {
-        val (code, _) = call(tv, "/pair", JSONObject().put("phone", phoneName), null)
+    suspend fun requestPairing(tv: FoundTv, phoneName: String, fromTv: Boolean = false): String? {
+        val (code, _) = call(tv, "/pair", JSONObject().put("phone", phoneName).put("tv", fromTv), null)
         return if (code == 200) null else "Couldn't reach ${tv.name}. Is Streammania open on the TV?"
     }
 

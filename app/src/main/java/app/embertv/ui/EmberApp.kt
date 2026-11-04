@@ -143,6 +143,8 @@ fun EmberApp(vm: AppViewModel, isTv: Boolean) {
                 // Play on TV: the code on the TV, and the phone's picker, code entry and remote
                 if (isTv) {
                     TvPairingDialog(vm)
+                    // Linking with another TV: type the code it shows.
+                    vm.pairingWith?.let { PairCodeDialog(vm, it) }
                 } else {
                     if (vm.showCastSheet) CastSheet(vm)
                     vm.pairingWith?.let { PairCodeDialog(vm, it) }

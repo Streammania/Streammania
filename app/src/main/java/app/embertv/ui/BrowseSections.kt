@@ -423,6 +423,7 @@ fun SettingsSection(vm: AppViewModel) {
     var pickingBackdrop by remember { mutableStateOf(false) }
     var choosingAudio by remember { mutableStateOf(false) }
     var pickingTeams by remember { mutableStateOf(false) }
+    var linkingTvs by remember { mutableStateOf(false) }
     var choosingPlayer by remember { mutableStateOf(false) }
     var editingTmdb by remember { mutableStateOf(false) }
     var tmdbDraft by remember { mutableStateOf(vm.tmdbKey) }
@@ -568,6 +569,14 @@ fun SettingsSection(vm: AppViewModel) {
 
             // ---- Playing ----
             SettingsGroup("Playing") {
+                if (isTv) {
+                    SettingRow(
+                        "Other TVs",
+                        vm.pairedTvs.firstOrNull()?.let { if (vm.pairedTvs.size == 1) "Linked with ${it.tv.name}" else "${vm.pairedTvs.size} linked" } ?: "None",
+                        "Share Up Next with another Fire TV at home",
+                        focusKey = "set:othertvs",
+                    ) { linkingTvs = true }
+                }
                 if (!isTv) {
                     SettingRow(
                         "Play on TV",
@@ -778,6 +787,7 @@ fun SettingsSection(vm: AppViewModel) {
     }
 
     if (pickingTeams) TeamPicker(vm) { pickingTeams = false }
+    if (linkingTvs) LinkedTvsDialog(vm) { linkingTvs = false }
     if (editingTmdb) {
         TextEntryDialog(
             title = "TMDB API key or Read Access Token (themoviedb.org → Settings → API). Leave empty to turn off.",
