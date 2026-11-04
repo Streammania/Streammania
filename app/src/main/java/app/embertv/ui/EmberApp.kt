@@ -274,7 +274,7 @@ private fun KickoffDialog(vm: AppViewModel, m: app.embertv.data.Match) {
             SheetTitle(
                 "${m.home.shortName} v ${m.away.shortName}",
                 eyebrow = if (mins > 0) "Kick-off in $mins min" else "Kicking off now",
-                subtitle = "One of your teams is about to play",
+                subtitle = if (vm.isFollowedMatch(m)) "One of your teams is about to play" else "You asked for a reminder",
             )
             Spacer(Modifier.height(24.dp))
             Column(Modifier.width(if (isTv) 340.dp else 400.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

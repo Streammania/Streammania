@@ -164,51 +164,145 @@ fun TeamPicker(vm: AppViewModel, onDone: () -> Unit) {
 
 // ---------------- Home card ----------------
 
-/** "Arsenal 2–1 Chelsea · 67'" or "Sat 1 Nov · 15:00". OK opens "Where's it on?". */
+/** An upcoming or finished game (your teams', or your leagues'). OK opens "Where's it on?"; holding OK sets a kick-off reminder. */
 @Composable
-fun MatchCard(match: Match, width: Dp, focusKey: String, onClick: () -> Unit) {
+fun MatchCard(match: Match, width: Dp, focusKey: String, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    val vm = LocalAppVm.current
+    // Which channel it's on, from the guide, for games later today.
+    LaunchedEffect(match.id) { vm.lookUpFixtureChannel(match) }
+    val channel = vm.fixtureChannels[match.id]?.ifEmpty { null }
+    GameCard(
+        match = match,
+        width = width,
+        focusKey = focusKey,
+        footer = if (match.state == MatchState.UPCOMING) {
+            listOfNotNull(channel, kickoffCountdown(match.kickoff, LocalNow.current)).joinToString(" · ")
+        } else null,
+        footerIcon = if (match.state == MatchState.UPCOMING && channel != null) EmberIcons.Tv else null,
+        reminded = vm.hasMatchReminder(match),
+        onClick = onClick,
+        onLongClick = onLongClick,
+    )
+}
+
+/**
+ * The one game card, Apple Sports style: the competition and minute on top, both crests either
+ * side of a big score, and a line underneath (the channel, or the countdown to kick-off). The team
+ * in front stays bright, your own team has a small dot, and live games fill a thin bar as the
+ * minutes go by.
+ */
+@Composable
+fun GameCard(
+    match: Match,
+    width: Dp,
+    focusKey: String,
+    footer: String?,
+    footerIcon: androidx.compose.ui.graphics.vector.ImageVector?,
+    reminded: Boolean = false,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+) {
+    val vm = LocalAppVm.current
     val live = match.state == MatchState.LIVE
+    val followed = remember(vm.followedTeams.size) { vm.followedTeams.map { it.id }.toSet() }
     FocusBox(
         modifier = Modifier.width(width).height(150.dp),
         focusKey = focusKey,
-        shape = RoundedCornerShape(16.dp),
-        focusedScale = 1.05f,
+        shape = RoundedCornerShape(18.dp),
+        focusedScale = 1.06f,
         color = if (live) Color(0x1FFFFFFF) else Ember.Card,
         focusedColor = Color.White,
         onClick = onClick,
+        onLongClick = onLongClick,
     ) { focused ->
         val text = if (focused) Color.Black else Ember.Text
         val dim = if (focused) Color(0xFF55555C) else Ember.Faint
-        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(match.league.name, style = Txt.Caption, color = dim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                when (match.state) {
-                    MatchState.LIVE -> {
-                        Box(Modifier.size(6.dp).clip(CircleShape).background(Ember.Live))
-                        Spacer(Modifier.width(5.dp))
-                        Text(match.status, style = Txt.Caption, color = if (focused) Color.Black else Ember.Live)
+        val hs = match.home.score.toIntOrNull()
+        val aws = match.away.score.toIntOrNull()
+        val scored = match.state != MatchState.UPCOMING && hs != null && aws != null
+        // The team behind is dimmed a little; level, both stay bright.
+        fun shade(mine: Int?, theirs: Int?) = if (scored && mine != null && theirs != null && mine < theirs) dim else text
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp, top = 11.dp, bottom = 12.dp), verticalArrangement = Arrangement.SpaceBetween) {
+                // Competition, then the state on the right.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(match.league.name, style = Txt.Caption, color = dim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (reminded) {
+                        Icon(EmberIcons.Bell, contentDescription = "Reminder set", tint = text, modifier = Modifier.size(12.dp))
+                        Spacer(Modifier.width(6.dp))
                     }
-                    MatchState.FINISHED -> Text(match.status, style = Txt.Caption, color = dim)
-                    MatchState.UPCOMING -> Text(
-                        "${formatDay(match.kickoff / 1000)} · ${formatClock(match.kickoff / 1000)}",
-                        style = Txt.Caption,
-                        color = dim,
-                    )
+                    when (match.state) {
+                        MatchState.LIVE -> {
+                            Box(Modifier.size(6.dp).clip(CircleShape).background(Ember.Live))
+                            Spacer(Modifier.width(5.dp))
+                            Text(match.status, style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = if (focused) Color.Black else Ember.Live)
+                        }
+                        MatchState.FINISHED -> Text("Full time", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = dim)
+                        MatchState.UPCOMING -> Text(
+                            "${formatDay(match.kickoff / 1000)} · ${formatClock(match.kickoff / 1000)}",
+                            style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold),
+                            color = text,
+                        )
+                    }
+                }
+                // The scoreboard: crest and name, the score (or "v"), crest and name.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    GameSide(match.home, match.home.id in followed, shade(hs, aws), focused, Modifier.weight(1f))
+                    if (scored) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("$hs", style = Txt.Title.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold), color = shade(hs, aws))
+                            Text("–", style = Txt.Title.copy(fontSize = 22.sp), color = dim, modifier = Modifier.padding(horizontal = 7.dp))
+                            Text("$aws", style = Txt.Title.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold), color = shade(aws, hs))
+                        }
+                    } else {
+                        Text("v", style = Txt.Headline, color = dim, modifier = Modifier.padding(horizontal = 10.dp))
+                    }
+                    GameSide(match.away, match.away.id in followed, shade(aws, hs), focused, Modifier.weight(1f))
+                }
+                // The channel, or how long until kick-off.
+                Row(Modifier.height(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (footer != null) {
+                        if (footerIcon != null) {
+                            Icon(footerIcon, contentDescription = null, tint = text, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(footer, style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
-            CardTeam(match.home, match.state, text)
-            CardTeam(match.away, match.state, text)
-            if (match.state == MatchState.UPCOMING) {
-                // How long until kick-off, counting down.
-                Text(
-                    kickoffCountdown(match.kickoff, LocalNow.current),
-                    style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold),
-                    color = if (focused) Color.Black else Ember.Text,
-                    maxLines = 1,
-                )
+            // How far through the game: a thin bar along the bottom, like live TV's.
+            val progress = if (live) matchProgress(match.status) else null
+            if (progress != null) {
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(if (focused) Color(0x22000000) else Color(0x1FFFFFFF))) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(if (focused) Color.Black else Ember.Live))
+                }
             }
         }
     }
+}
+
+@Composable
+private fun GameSide(t: TeamScore, yours: Boolean, color: Color, focused: Boolean, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) { NetImage(t.logo, Modifier.fillMaxSize(), ContentScale.Fit) }
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (yours) {
+                // Your team: a small dot, white on the card, black when it's lit.
+                Box(Modifier.size(5.dp).clip(CircleShape).background(if (focused) Color.Black else Color.White))
+                Spacer(Modifier.width(5.dp))
+            }
+            Text(t.shortName, style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** How far through a live game from its minute: "67'" → 0.74, "HT" → 0.5, "45'+2" → 0.5. Null if unknown. */
+fun matchProgress(status: String): Float? {
+    val s = status.trim().uppercase()
+    if (s == "HT" || s.startsWith("HALF")) return 0.5f
+    val minute = Regex("^(\\d{1,3})").find(s)?.groupValues?.get(1)?.toIntOrNull() ?: return null
+    return (minute / 90f).coerceIn(0.02f, 1f)
 }
 
 /** "Kicks off in 42 min", "In 5h 20m", "Tomorrow", "In 3 days" for a kick-off at [kickoffMs]. */
@@ -773,52 +867,22 @@ private fun HeaderTeam(t: TeamScore, modifier: Modifier) {
 @Composable
 fun SportCard(item: AppViewModel.LiveSport, width: Dp, focusKey: String, onClick: () -> Unit, onLongClick: () -> Unit) {
     val m = item.match
-    val live = m.state == MatchState.LIVE
-    FocusBox(
-        modifier = Modifier.width(width).height(150.dp),
+    val channel = item.hits.firstOrNull()?.channel
+    val others = item.hits.size - 1
+    GameCard(
+        match = m,
+        width = width,
         focusKey = focusKey,
-        shape = RoundedCornerShape(16.dp),
-        focusedScale = 1.06f,
-        color = if (live) Color(0x1FFFFFFF) else Ember.Card,
-        focusedColor = Color.White,
+        footer = when {
+            channel == null && item.searching -> "Finding channels…"
+            channel == null -> "Find the channel"
+            others > 0 -> "${channelParts(channel.name).first} + $others more"
+            else -> channelParts(channel.name).first
+        },
+        footerIcon = if (channel != null) EmberIcons.Play else EmberIcons.Search,
         onClick = onClick,
         onLongClick = onLongClick,
-    ) { focused ->
-        val text = if (focused) Color.Black else Ember.Text
-        val dim = if (focused) Color(0xFF55555C) else Ember.Faint
-        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(m.league.name, style = Txt.Caption, color = dim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (live) {
-                    Box(Modifier.size(6.dp).clip(CircleShape).background(Ember.Live))
-                    Spacer(Modifier.width(5.dp))
-                    Text(m.status, style = Txt.Caption, color = if (focused) Color.Black else Ember.Live)
-                } else {
-                    Text("Kick-off ${formatClock(m.kickoff / 1000)}", style = Txt.Caption, color = if (focused) Color.Black else Ember.Text)
-                }
-            }
-            CardTeam(m.home, m.state, text)
-            CardTeam(m.away, m.state, text)
-            val channel = item.hits.firstOrNull()?.channel
-            val others = item.hits.size - 1
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (channel != null) EmberIcons.Play else EmberIcons.Search, contentDescription = null, tint = if (focused) Color.Black else Ember.Text, modifier = Modifier.size(13.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    when {
-                        channel == null && item.searching -> "Finding channels…"
-                        channel == null -> "Find the channel"
-                        others > 0 -> "On ${channel.name} + $others more"
-                        else -> "On ${channel.name}"
-                    },
-                    style = Txt.Caption,
-                    color = if (focused) Color.Black else Ember.Text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
+    )
 }
 
 // ---------------- Score bug ----------------

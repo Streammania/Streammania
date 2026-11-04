@@ -593,6 +593,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (!kickoffReminders) dueKickoff = null
     }
 
+    /** Games with a kick-off reminder, by id; [remindedMatches] keeps this session's copies. */
+    var matchReminders by mutableStateOf(prefs.matchReminders)
+        private set
+    private val remindedMatches = HashMap<String, Match>()
+
+    fun hasMatchReminder(m: Match): Boolean = m.id in matchReminders
+
+    fun toggleMatchReminder(m: Match) {
+        if (m.state != MatchState.UPCOMING) return
+        if (m.id in matchReminders) {
+            matchReminders = matchReminders - m.id
+            remindedMatches.remove(m.id)
+            notify("Reminder removed")
+        } else {
+            // Old ones (games long gone) drop off as new ones are added.
+            matchReminders = (matchReminders.toList().takeLast(40) + m.id).toSet()
+            remindedMatches[m.id] = m
+            notify("We'll ask you before ${m.home.shortName} v ${m.away.shortName} kicks off")
+        }
+        prefs.matchReminders = matchReminders
+    }
+
+    /** Whether the kick-off card is for a game you asked about, rather than one of your teams. */
+    fun isFollowedMatch(m: Match): Boolean {
+        val ids = followedTeams.map { it.id }.toSet()
+        return m.home.id in ids || m.away.id in ids
+    }
+
     fun dismissKickoff() {
         dueKickoff = null
     }
@@ -806,6 +834,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         HintsSetting.show = prefs.showHints
         autoplayNext = prefs.autoplayNext
         kickoffReminders = prefs.kickoffReminders
+        matchReminders = prefs.matchReminders
         dueKickoff = null
         homeExtras = null
         applyCategoryFilter()
@@ -2640,6 +2669,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // Channel searches by match id, with when they were done.
     private val sportHits = HashMap<String, Pair<Long, List<MatchHit>>>()
 
+    /** The channel showing an upcoming game, from the guide ("" = looked, not found). */
+    val fixtureChannels = androidx.compose.runtime.mutableStateMapOf<String, String>()
+    private val fixtureQueue = ArrayDeque<Match>()
+    private var fixtureJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Looks up which channel an upcoming game is on, one at a time and only for games in the next
+     * 18 hours (further ahead the guide usually doesn't reach). Each look is a few guide requests.
+     */
+    fun lookUpFixtureChannel(m: Match) {
+        if (m.state != MatchState.UPCOMING || m.id in fixtureChannels || fixtureQueue.any { it.id == m.id }) return
+        if (m.kickoff - System.currentTimeMillis() > 18 * 3600_000L) return
+        val r = repo ?: return
+        fixtureQueue.addLast(m)
+        if (fixtureJob?.isActive == true) return
+        fixtureJob = viewModelScope.launch {
+            while (fixtureQueue.isNotEmpty()) {
+                val next = fixtureQueue.removeFirst()
+                val hit = try {
+                    app.embertv.data.MatchFinder.find(r, next, nowSeconds(), guideBudget = 10) { _, _, _ -> }
+                        .firstOrNull { it.score >= 8 }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
+                fixtureChannels[next.id] = hit?.channel?.let { channelParts(it.name).first } ?: ""
+            }
+        }
+    }
+
     fun toggleSportOnHome() {
         sportOnHome = !sportOnHome
         prefs.sportOnHome = sportOnHome
@@ -2956,9 +3016,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Five minutes before one of your teams kicks off, asks whether to watch. */
     private fun checkKickoffs(now: Long) {
-        if (!kickoffReminders || dueKickoff != null || dueReminder != null || findingMatch != null) return
+        if ((!kickoffReminders && matchReminders.isEmpty()) || dueKickoff != null || dueReminder != null || findingMatch != null) return
         val nowMs = now * 1000
-        val m = teamMatches.firstOrNull {
+        // Your teams (if turned on), and any game you asked to be reminded about.
+        val asked = if (matchReminders.isEmpty()) emptyList() else {
+            val pool = remindedMatches.values + teamMatches + leagueFixtures + liveSport.map { it.match }
+            pool.filter { it.id in matchReminders }.distinctBy { it.id }
+        }
+        val candidates = (if (kickoffReminders) teamMatches else emptyList()) + asked
+        val m = candidates.firstOrNull {
             it.state == MatchState.UPCOMING && it.kickoff - nowMs in -2 * 60_000L..5 * 60_000L && it.id !in kickoffsShown
         } ?: return
         kickoffsShown.add(m.id)

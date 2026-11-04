@@ -271,14 +271,14 @@ private fun LazyListScope.homeRows(
                                 "home:sport:${s.match.id}",
                                 // Always list the channels showing it, so there's a choice.
                                 onClick = { vm.findingMatch = s.match },
-                                onLongClick = { vm.pinMatch(s.match) },
+                                onLongClick = { if (s.match.state == app.embertv.data.MatchState.UPCOMING) vm.toggleMatchReminder(s.match) else vm.pinMatch(s.match) },
                             )
                         }
                         items(fixtures, key = { "team-" + it.id }) { m ->
-                            MatchCard(m, continueWidth, "home:match:${m.id}") { vm.findingMatch = m }
+                            MatchCard(m, continueWidth, "home:match:${m.id}", onLongClick = { vm.toggleMatchReminder(m) }) { vm.findingMatch = m }
                         }
                         items(leagueNext, key = { "league-" + it.id }) { m ->
-                            MatchCard(m, continueWidth, "home:league:${m.id}") { vm.findingMatch = m }
+                            MatchCard(m, continueWidth, "home:league:${m.id}", onLongClick = { vm.toggleMatchReminder(m) }) { vm.findingMatch = m }
                         }
                     }
                 }
