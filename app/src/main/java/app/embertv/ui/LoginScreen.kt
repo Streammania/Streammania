@@ -155,7 +155,7 @@ fun LoginScreen(vm: AppViewModel) {
                             Text(
                                 buildAnnotatedString {
                                     append("No camera? Go to ")
-                                    withStyle(SpanStyle(color = Ember.Dim, fontWeight = FontWeight.SemiBold)) { append(url.removePrefix("http://").trimEnd('/')) }
+                                    withStyle(SpanStyle(color = Ember.Dim, fontWeight = FontWeight.SemiBold)) { append(url.removePrefix("http://").substringBefore('#').trimEnd('/')) }
                                 },
                                 style = Txt.Caption,
                                 color = Ember.Faint,
