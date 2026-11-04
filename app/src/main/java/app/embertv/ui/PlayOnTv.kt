@@ -92,7 +92,17 @@ fun LinkedTvsDialog(vm: AppViewModel, onDismiss: () -> Unit) {
                                 else -> "Linked · not seen right now"
                             },
                             leading = { dark -> Icon(EmberIcons.Tv, null, tint = if (dark) Color.Black else Ember.Text, modifier = Modifier.size(22.dp)) },
-                            trailing = { dark -> if (armed != key) Icon(EmberIcons.Check, null, tint = if (dark) Color.Black else Ember.Dim, modifier = Modifier.size(20.dp)) },
+                            // A filled dot when it's on the Wi-Fi now, a ring when it isn't (like AirPlay).
+                            trailing = { dark ->
+                                val c = if (dark) Color.Black else Ember.Text
+                                Box(
+                                    Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(if (seen) c else Color.Transparent)
+                                        .border(1.5.dp, if (seen) Color.Transparent else c.copy(alpha = 0.5f), CircleShape)
+                                )
+                            },
                         ) {
                             if (armed == key) {
                                 armed = null
@@ -116,18 +126,24 @@ fun LinkedTvsDialog(vm: AppViewModel, onDismiss: () -> Unit) {
                         vm.linkTv(tv)
                     }
                 }
-                if (fresh.isEmpty()) {
-                    Text(
-                        "Looking for other TVs… Open Streammania on the other TV.",
-                        style = Txt.Caption,
-                        color = Ember.Faint,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                    )
-                }
+                if (fresh.isEmpty()) SearchingNote("Looking for other TVs. Open Streammania on the other one.")
                 SheetOption("Done", focusKey = "tvs:done", autoFocus = linked.isEmpty() && fresh.isEmpty(), onClick = onDismiss)
             }
         }
+    }
+}
+
+/** The spinning "looking" line under a list of TVs, as on Apple's AirPlay menu. */
+@Composable
+private fun SearchingNote(text: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AppleSpinner(Modifier.size(16.dp), color = Ember.Faint)
+        Spacer(Modifier.width(10.dp))
+        Text(text, style = Txt.Caption, color = Ember.Faint, textAlign = TextAlign.Center)
     }
 }
 
@@ -248,15 +264,7 @@ fun CastSheet(vm: AppViewModel) {
                         vm.showCastSheet = false
                     }
                 }
-                if (fresh.isEmpty()) {
-                    Text(
-                        "Looking for TVs on your Wi-Fi…",
-                        style = Txt.Caption,
-                        color = Ember.Faint,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                    )
-                }
+                if (fresh.isEmpty()) SearchingNote("Looking for TVs on your Wi-Fi")
                 if (target != null) {
                     SheetOption(
                         "Remote control",
