@@ -22,12 +22,14 @@ android {
     }
 
     // A fixed key so each new build installs over the previous one on the TV.
+    // The signing key lives in GitHub's private secrets, never in the code. The build writes it to
+    // release.p12 just before building (see .github/workflows/build.yml).
     signingConfigs {
         create("ember") {
-            storeFile = file("ember.keystore")
-            storePassword = "embertv"
-            keyAlias = "ember"
-            keyPassword = "embertv"
+            storeFile = file("release.p12")
+            storePassword = System.getenv("SIGNING_STORE_PASSWORD") ?: ""
+            keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: "streammania"
+            keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: ""
             storeType = "pkcs12"
         }
     }

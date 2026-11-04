@@ -22,8 +22,20 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Signing key from secrets
+        shell: bash
+        env:
+          SIGNING_KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$SIGNING_KEYSTORE_B64" ]; then echo "::error::Add the SIGNING_ secrets (see the signing file)"; exit 1; fi
+          echo "$SIGNING_KEYSTORE_B64" | base64 -d > app/release.p12
+
       - name: Build APK
         shell: bash
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
         run: |
           set -o pipefail
           ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
