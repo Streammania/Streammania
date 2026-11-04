@@ -5,3 +5,4 @@
 # Optional pieces some libraries mention but don't need on Android.
 -ignorewarnings
 -dontwarn **
+# Signed with the Streammania key from GitHub secrets.
