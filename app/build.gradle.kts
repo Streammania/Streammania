@@ -17,7 +17,7 @@ android {
         versionCode = build
         versionName = "1.0.$build"
         // Where built-in updates are fetched from (this repository's releases).
-        val repo = System.getenv("GITHUB_REPOSITORY") ?: "michaelgillespie88/ember-tv"
+        val repo = System.getenv("GITHUB_REPOSITORY") ?: "Streammania/Streammania"
         buildConfigField("String", "UPDATE_REPO", "\"$repo\"")
     }
 

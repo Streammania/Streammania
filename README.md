@@ -59,7 +59,7 @@ Every push to `main` builds a new APK automatically (see the **Actions** tab) an
 
 **Then, on either**
 1. Open Downloader and enter:
-   `https://github.com/michaelgillespie88/ember-tv/releases/latest/download/Streammania.apk`
+   `https://github.com/Streammania/Streammania/releases/latest/download/Streammania.apk`
    (the older `.../EmberTV.apk` link and Downloader codes made for it still work)
 2. Choose **Install**, then open **Streammania** and sign in with your provider's server address, username and password.
 
