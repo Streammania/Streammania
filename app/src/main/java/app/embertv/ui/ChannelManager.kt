@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -260,17 +261,20 @@ private fun HideChannels(vm: AppViewModel, repo: app.embertv.data.Repository) {
         when (val r = load) {
             is LoadResult.Loading -> SkeletonRows(Modifier.weight(1f), underHeader = false)
             is LoadResult.Err -> ErrorView(r.message, Modifier.weight(1f)) { vm.reload() }
-            is LoadResult.Ok -> LazyVerticalGrid(
+            is LoadResult.Ok -> {
+                val managedKeys = remember(r.value) { uniqueKeys(r.value) { it.streamId } }
+                LazyVerticalGrid(
                 columns = GridCells.Fixed(if (isTv) 3 else 1),
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(bottom = 24.dp, top = 4.dp, start = 4.dp, end = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(if (isTv) 10.dp else 8.dp),
             ) {
-                items(r.value, key = { it.streamId }) { ch ->
+                itemsIndexed(r.value, key = { i, _ -> managedKeys[i] }) { _, ch ->
                     val on = ch.streamId !in hidden
                     ChannelToggle(ch, on) { vm.setChannelsHidden(listOf(ch.streamId), on) }
                 }
+            }
             }
         }
     }

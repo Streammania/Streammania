@@ -109,13 +109,14 @@ private fun ChannelList(
                     modifier,
                 )
             } else {
+                val channelKeys = remember(channels) { uniqueKeys(channels) { it.streamId } }
                 LazyColumn(
                     modifier = modifier.fillMaxHeight(),
                     state = vm.live.list(categoryId),
                     contentPadding = PaddingValues(top = 8.dp, bottom = 40.dp, start = 6.dp, end = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(if (vm.compactLists) 4.dp else 6.dp),
                 ) {
-                    itemsIndexed(channels, key = { _, ch -> ch.streamId }) { index, ch ->
+                    itemsIndexed(channels, key = { i, _ -> channelKeys[i] }) { index, ch ->
                         ChannelRow(
                             repo = repo,
                             channel = ch,

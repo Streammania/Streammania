@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -110,6 +111,7 @@ private fun MovieGrid(vm: AppViewModel, repo: Repository, categoryId: String, gr
                     modifier,
                 )
             } else {
+                val sortedKeys = remember(sorted) { uniqueKeys(sorted) { it.streamId } }
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 100.dp),
                     state = vm.movies.grid(categoryId),
@@ -128,7 +130,7 @@ private fun MovieGrid(vm: AppViewModel, repo: Repository, categoryId: String, gr
                             SortChip(sortName(vm.movieSort), "movie:$categoryId:sort") { vm.cycleMovieSort() }
                         }
                     }
-                    items(sorted, key = { it.streamId }) { m ->
+                    itemsIndexed(sorted, key = { i, _ -> sortedKeys[i] }) { _, m ->
                         PosterCard(
                             // The year goes underneath, with the rating, rather than in the title.
                             title = m.name.replace(TRAILING_YEAR, ""),

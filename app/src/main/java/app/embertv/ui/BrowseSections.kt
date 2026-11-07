@@ -99,13 +99,14 @@ fun FavouritesSection(vm: AppViewModel) {
 private fun ChannelShelf(vm: AppViewModel, title: String, found: List<Channel>, keyPrefix: String) {
     // Each channel once in the results, not once per quality.
     val channels = remember(found, vm.qualityChoice, vm.channelsOnce) { channelsOnce(found, vm.qualityChoice, vm.channelsOnce) }
+    val channelKeys = remember(channels) { uniqueKeys(channels) { it.streamId } }
     Column {
         SectionHeader(title, Modifier.padding(start = edgePadding()))
         LazyRow(
             contentPadding = PaddingValues(horizontal = edgePadding(), vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(22.dp),
         ) {
-            itemsIndexed(channels, key = { _, c -> c.streamId }) { index, c ->
+            itemsIndexed(channels, key = { i, _ -> channelKeys[i] }) { index, c ->
                 ChannelCard(
                     name = c.name,
                     logo = c.icon,

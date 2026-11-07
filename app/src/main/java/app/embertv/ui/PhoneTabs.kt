@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -129,13 +130,14 @@ fun PhoneLiveTab(vm: AppViewModel) {
                     )
                 } else {
                     val pad = LocalContentPadding.current
+                    val channelKeys = remember(channels) { uniqueKeys(channels) { it.streamId } }
                     LazyColumn(
                         state = vm.live.list(categoryId),
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = pad.calculateTopPadding() + 8.dp, bottom = pad.calculateBottomPadding() + 8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        itemsIndexed(channels, key = { _, ch -> ch.streamId }) { index, ch ->
+                        itemsIndexed(channels, key = { i, _ -> channelKeys[i] }) { index, ch ->
                             ChannelRow(
                                 repo = repo,
                                 channel = ch,
@@ -223,13 +225,14 @@ fun PhoneGuideTab(vm: AppViewModel) {
                                 }
                             }
                             PhoneTimeHeader(dayStart, now, day, scroll, onDay = { pickingDay = true })
+                            val channelsKeys = remember(channels) { uniqueKeys(channels) { it.streamId } }
                             LazyColumn(
                                 state = vm.guide.list(categoryId),
                                 contentPadding = PaddingValues(top = 2.dp, bottom = pad.calculateBottomPadding() + 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                                 modifier = Modifier.fillMaxSize(),
                             ) {
-                                items(channels, key = { it.streamId }) { ch ->
+                                itemsIndexed(channels, key = { i, _ -> channelsKeys[i] }) { _, ch ->
                                     PhoneGuideRow(
                                         repo = repo,
                                         channel = ch,
@@ -598,6 +601,7 @@ fun PhoneMoviesTab(vm: AppViewModel) {
                 } else {
                     val pad = LocalContentPadding.current
                     val sortedMovies = remember(r.value, vm.movieSort) { sortMovies(r.value, vm.movieSort) }
+                    val sortedMoviesKeys = remember(sortedMovies) { uniqueKeys(sortedMovies) { it.streamId } }
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 106.dp),
                         state = vm.movies.grid(categoryId),
@@ -609,7 +613,7 @@ fun PhoneMoviesTab(vm: AppViewModel) {
                         item(key = "sort", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                             SortChip(sortName(vm.movieSort), "movie:$categoryId:sort") { vm.cycleMovieSort() }
                         }
-                        items(sortedMovies, key = { it.streamId }) { m ->
+                        itemsIndexed(sortedMovies, key = { i, _ -> sortedMoviesKeys[i] }) { _, m ->
                             PosterCard(
                                 title = m.name,
                                 image = m.poster,

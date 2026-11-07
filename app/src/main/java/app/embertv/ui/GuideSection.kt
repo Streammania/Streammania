@@ -134,6 +134,9 @@ private fun GuideGrid(
     var details by remember { mutableStateOf<GuideFocus?>(null) }
     var pickingGroup by remember { mutableStateOf(false) }
     var pickingDay by remember { mutableStateOf(false) }
+    // Down past the last channel carries on into the next group, at its first channel.
+    var focusedRow by remember { mutableIntStateOf(-1) }
+    var enterAtTop by remember { mutableStateOf(false) }
     val now = LocalNow.current
     val windowStart = (now / 1800) * 1800 + step * 1800L
     val windowEnd = windowStart + WINDOW_MINUTES * 60
@@ -230,15 +233,30 @@ private fun GuideGrid(
                                     Modifier.weight(1f),
                                 )
                             } else {
+                                val channelKeys = remember(channels) { uniqueKeys(channels) { it.streamId } }
+                                val listState = vm.guide.list(categoryId)
+                                LaunchedEffect(categoryId, enterAtTop) { if (enterAtTop) runCatching { listState.scrollToItem(0) } }
                                 LazyColumn(
-                                    state = vm.guide.list(categoryId),
+                                    state = listState,
                                     contentPadding = PaddingValues(top = 2.dp, bottom = 24.dp),
                                     verticalArrangement = Arrangement.spacedBy(ROW_GAP),
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .onPreviewKeyEvent { ev -> guideKey(ev, focus?.programme, windowStart, windowEnd, step, onStep, leftExits = true) },
+                                        .onPreviewKeyEvent { ev ->
+                                            val next = categories.indexOfFirst { it.id == categoryId } + 1
+                                            if (ev.type == KeyEventType.KeyDown && ev.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN &&
+                                                focusedRow == channels.lastIndex && next in 1 until categories.size
+                                            ) {
+                                                focusedRow = -1
+                                                enterAtTop = true
+                                                onCategory(categories[next].id)
+                                                true
+                                            } else {
+                                                guideKey(ev, focus?.programme, windowStart, windowEnd, step, onStep, leftExits = true)
+                                            }
+                                        },
                                 ) {
-                                    itemsIndexed(channels, key = { _, ch -> ch.streamId }) { index, ch ->
+                                    itemsIndexed(channels, key = { i, _ -> channelKeys[i] }) { index, ch ->
                                         GuideRow(
                                             repo = repo,
                                             channel = ch,
@@ -254,8 +272,11 @@ private fun GuideGrid(
                                             channelColumn = GUIDE_CHANNEL_COLUMN,
                                             onFocus = { p ->
                                                 focus = GuideFocus(ch, p)
+                                                focusedRow = index
+                                                enterAtTop = false
                                                 vm.guideFullScreen = true
                                             },
+                                            autoFocusLive = enterAtTop && index == 0,
                                             onPick = { p ->
                                                 if (p == null || p.isLive(now)) {
                                                     vm.push(Screen.PlayLive(channels, index))

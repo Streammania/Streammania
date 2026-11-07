@@ -878,3 +878,18 @@ fun Modifier.pressable(onClick: () -> Unit): Modifier = composed {
         }
         .clickable(interactionSource = interaction, indication = null, onClick = onClick)
 }
+
+/**
+ * Keys for a lazy list that are always different: providers sometimes list the same channel or film
+ * twice in one group, and a repeated key makes the list crash as it scrolls to the second copy.
+ * The first copy keeps its plain id (so focus and scroll stay put); later copies get "#2", "#3".
+ */
+fun <T> uniqueKeys(list: List<T>, id: (T) -> Any): List<Any> {
+    val seen = HashMap<Any, Int>(list.size * 2)
+    return list.map { item ->
+        val k = id(item)
+        val n = (seen[k] ?: 0) + 1
+        seen[k] = n
+        if (n == 1) k else "$k#$n"
+    }
+}
