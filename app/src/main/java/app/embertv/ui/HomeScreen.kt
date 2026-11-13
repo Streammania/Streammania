@@ -11,6 +11,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -115,11 +117,13 @@ fun HomeScreen(vm: AppViewModel) {
     val hideBar = focusedTab < 0 && !reveal &&
         ((vm.tab == Tabs.GUIDE && vm.guideFullScreen) || (vm.tab == Tabs.HOME && vm.homeBarHidden))
     // The same soft warm glow at the top of every page, like the guide.
+    Box(Modifier.fillMaxSize().background(Ember.Bg)) {
+    // Home's background fades to the highlighted film's or series' artwork, as on Apple TV.
+    HomeAmbientArt(if (vm.tab == Tabs.HOME && vm.homeArtwork) vm.homeArt else null)
     Column(
         Modifier
             .fillMaxSize()
-            .background(Ember.Bg)
-            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Ember.Glow, androidx.compose.ui.graphics.Color.Transparent), endY = 620f))
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Ember.Glow.copy(alpha = 0.55f), androidx.compose.ui.graphics.Color.Transparent), endY = 620f))
     ) {
         AnimatedVisibility(visible = !hideBar, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
         Row(
@@ -165,7 +169,9 @@ fun HomeScreen(vm: AppViewModel) {
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (vm.tab) {
-                Tabs.HOME -> HomeSection(vm)
+                Tabs.HOME -> androidx.compose.runtime.CompositionLocalProvider(
+                    LocalAmbientArt provides (if (vm.homeArtwork) vm::highlightArt else null)
+                ) { HomeSection(vm) }
                 Tabs.LIVE -> LiveSection(vm)
                 Tabs.GUIDE -> GuideSection(vm)
                 Tabs.MOVIES -> MoviesSection(vm)
@@ -174,6 +180,45 @@ fun HomeScreen(vm: AppViewModel) {
                 Tabs.SEARCH -> SearchSection(vm)
                 else -> SettingsSection(vm)
             }
+        }
+    }
+    }
+}
+
+/**
+ * The highlighted artwork, soft and dim across the top of Home, fading into the background colour.
+ * It's loaded very small and stretched, which gives the blurred look for almost no work (Fire TV
+ * Sticks can't blur a full-screen picture smoothly), and pictures cross-fade as the highlight moves.
+ */
+@Composable
+private fun HomeAmbientArt(url: String?) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.animation.Crossfade(targetState = url, animationSpec = androidx.compose.animation.core.tween(700), label = "homeArt") { art ->
+        if (art != null) {
+            val request = remember(art) {
+                coil.request.ImageRequest.Builder(context).data(art).size(96, 96).memoryCacheKey("ambient:$art").build()
+            }
+            Box(Modifier.fillMaxSize()) {
+                coil.compose.AsyncImage(
+                    model = request,
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f).graphicsLayer { alpha = 0.42f },
+                )
+                // Fades down into the background, so rows lower on the page stay easy to read.
+                Box(
+                    Modifier.fillMaxSize().background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            0f to Ember.Bg.copy(alpha = 0.25f),
+                            0.45f to Ember.Bg.copy(alpha = 0.55f),
+                            0.8f to Ember.Bg,
+                            1f to Ember.Bg,
+                        )
+                    )
+                )
+            }
+        } else {
+            Box(Modifier.fillMaxSize())
         }
     }
 }

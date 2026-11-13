@@ -835,6 +835,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         autoplayNext = prefs.autoplayNext
         kickoffReminders = prefs.kickoffReminders
         matchReminders = prefs.matchReminders
+        homeArtwork = prefs.homeArtwork
+        homeArt = null
         dueKickoff = null
         homeExtras = null
         applyCategoryFilter()
@@ -1656,6 +1658,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     val textSizeLabel: String
         get() = TEXT_SIZES.firstOrNull { kotlin.math.abs(it.second - Txt.scale) < 0.01f }?.first ?: "Normal"
+
+    // ---- Artwork behind Home ----
+
+    var homeArtwork by mutableStateOf(prefs.homeArtwork)
+        private set
+
+    fun toggleHomeArtwork() {
+        homeArtwork = !homeArtwork
+        prefs.homeArtwork = homeArtwork
+        if (!homeArtwork) homeArt = null
+    }
+
+    /** The picture behind Home: the highlighted film's or series' artwork, or null for the plain glow. */
+    var homeArt by mutableStateOf<String?>(null)
+        private set
+    private var homeArtJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Called as posters gain and lose the highlight. It waits a moment before changing, so moving
+     * quickly along a row doesn't load a picture for every poster passed.
+     */
+    fun highlightArt(url: String?) {
+        if (!homeArtwork) return
+        homeArtJob?.cancel()
+        homeArtJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(if (url == null) 500 else 380)
+            homeArt = url?.takeIf { it.isNotBlank() }
+        }
+    }
 
     fun toggleHints() {
         HintsSetting.show = !HintsSetting.show

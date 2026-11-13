@@ -164,7 +164,7 @@ class Prefs(context: Context) {
         val e = sp.edit()
         for (key in sp.all.keys) {
             val belongs = if (id == MAIN_PROFILE) {
-                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next", "kickoff_reminders", "finished_at", "match_reminders") ||
+                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next", "kickoff_reminders", "finished_at", "match_reminders", "home_artwork") ||
                     key.startsWith("pos_") || key.startsWith("last_ep_")
             } else {
                 key.startsWith("p_${id}_")
@@ -602,6 +602,13 @@ class Prefs(context: Context) {
     fun clearChannelQualities() {
         sp.edit().remove(pk("channel_quality")).apply()
     }
+
+    /** Whether Home's background fades to the highlighted film's or series' artwork (TV). */
+    var homeArtwork: Boolean
+        get() = sp.getBoolean(pk("home_artwork"), true)
+        set(value) {
+            sp.edit().putBoolean(pk("home_artwork"), value).apply()
+        }
 
     /** Games (by id) this profile asked to be reminded about, whoever's playing. */
     var matchReminders: Set<String>

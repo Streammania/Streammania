@@ -357,6 +357,12 @@ fun ChannelLogo(url: String, name: String, modifier: Modifier = Modifier) {
 
 // ---------- Cards ----------
 
+/**
+ * Set on Home (TV): tells the page which artwork is highlighted (or null when the highlight leaves),
+ * so its background can fade to it. Null everywhere else.
+ */
+val LocalAmbientArt = androidx.compose.runtime.compositionLocalOf<((String?) -> Unit)?> { null }
+
 @Composable
 fun PosterCard(
     title: String,
@@ -374,6 +380,7 @@ fun PosterCard(
     onLongClick: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val ambient = LocalAmbientArt.current
     Column(modifier) {
         FocusBox(
             modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
@@ -383,6 +390,7 @@ fun PosterCard(
             onFocusChange = {
                 focused = it
                 if (it) onFocused?.invoke()
+                ambient?.invoke(if (it) image else null)
             },
             onClick = onClick,
             onLongClick = onLongClick,

@@ -660,6 +660,14 @@ fun SettingsSection(vm: AppViewModel) {
 
                     if (isTv) {
                         SettingRow(
+                            "Artwork behind Home",
+                            if (vm.homeArtwork) "On" else "Off",
+                            "Home's background fades to the film or series you're on",
+                            focusKey = "set:homeart",
+                        ) { vm.toggleHomeArtwork() }
+                    }
+                    if (isTv) {
+                        SettingRow(
                             "Remote hints",
                             if (HintsSetting.show) "On" else "Off",
                             "The little OK, arrow and Back guides on screen",

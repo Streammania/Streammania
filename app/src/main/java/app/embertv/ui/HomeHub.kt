@@ -186,12 +186,16 @@ private fun minutesLeft(e: HistoryEntry): String? {
 @Composable
 fun ContinueCard(entry: HistoryEntry, width: Dp, onClick: () -> Unit, onLongClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
+    val ambient = LocalAmbientArt.current
     Column(Modifier.width(width)) {
         FocusBox(
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
             focusKey = "continue:${entry.key}",
             focusedScale = 1.07f,
-            onFocusChange = { focused = it },
+            onFocusChange = {
+                focused = it
+                ambient?.invoke(if (it) entry.image.ifBlank { entry.seriesCover } else null)
+            },
             onClick = onClick,
             onLongClick = onLongClick,
         ) {
