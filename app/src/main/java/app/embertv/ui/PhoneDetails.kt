@@ -196,7 +196,7 @@ fun PhoneMovieDetail(vm: AppViewModel, movie: Movie) {
                 }
                 if (info != null && info.cast.isNotBlank() && extras?.cast.isNullOrEmpty()) {
                     Spacer(Modifier.height(4.dp))
-                    Text("Starring  ${info.cast}", style = Txt.Caption, color = Ember.Dim)
+                    Text("Starring  ${info.cast.split(',').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")}", style = Txt.Caption, color = Ember.Dim)
                 }
                 Spacer(Modifier.height(18.dp))
             }

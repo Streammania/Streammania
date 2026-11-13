@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -195,8 +196,13 @@ fun MovieDetailScreen(vm: AppViewModel, movie: Movie) {
         Backdrop(backdrop)
         androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize()) {
         item(key = "hero") {
+        // At least a full screen, but taller when the words need it (bigger text, long plots), so
+        // the title is never pushed off the top.
         Row(
-            Modifier.fillParentMaxHeight().fillMaxWidth().padding(horizontal = 64.dp, vertical = 48.dp),
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp)
+                .padding(horizontal = 64.dp, vertical = 36.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
@@ -222,7 +228,7 @@ fun MovieDetailScreen(vm: AppViewModel, movie: Movie) {
                         info.plot,
                         style = Txt.Body,
                         color = Ember.Text.copy(alpha = 0.9f),
-                        maxLines = 6,
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.width(560.dp),
                     )
@@ -234,10 +240,11 @@ fun MovieDetailScreen(vm: AppViewModel, movie: Movie) {
                     }
                     if (info.cast.isNotBlank()) {
                         Text(
-                            "Starring  ${info.cast}",
+                            // "A,B,C" from the provider reads better as "A, B, C".
+                            "Starring  ${info.cast.split(',').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")}",
                             style = Txt.Caption,
                             color = Ember.Dim,
-                            maxLines = 2,
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.width(560.dp),
                         )
