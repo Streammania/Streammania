@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.layout.width
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -406,21 +408,44 @@ private fun UpdateDialog(vm: AppViewModel) {
     ) {
         DialogBackdropBlur()
         if (isTv && info.notes.isNotEmpty()) {
-            // TV: side by side, so it always fits the screen, even with bigger text.
+            // TV: one solid card, the app and buttons on the left and what's new on the right, so
+            // it always fits the screen (even with bigger text) and nothing behind shows through.
             Row(
-                Modifier.width(820.dp).padding(horizontal = 24.dp, vertical = 16.dp),
+                Modifier
+                    .width(840.dp)
+                    .clip(RoundedCornerShape(32.dp))
+                    .background(Color(0xF7151519))
+                    .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(32.dp))
+                    .padding(horizontal = 34.dp, vertical = 30.dp)
+                    .height(androidx.compose.foundation.layout.IntrinsicSize.Min),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.width(340.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    UpdateHeader(info, iconSize = 64.dp)
-                    Spacer(Modifier.height(20.dp))
+                Column(Modifier.width(330.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    UpdateHeader(info, iconSize = 72.dp)
+                    Spacer(Modifier.height(22.dp))
                     UpdateButtons(vm, progress, Modifier.fillMaxWidth())
                 }
-                Spacer(Modifier.width(32.dp))
+                Spacer(Modifier.width(30.dp))
+                Box(Modifier.fillMaxHeight().width(1.dp).background(Color(0x1FFFFFFF)))
+                Spacer(Modifier.width(30.dp))
                 Column(Modifier.weight(1f)) {
-                    UpdateNotes(info, solid = true, lines = 3)
-                    Spacer(Modifier.height(10.dp))
-                    UpdateFootnote(info, Modifier.padding(start = 6.dp))
+                    Text(
+                        "WHAT'S NEW",
+                        style = Txt.Caption.copy(fontWeight = semi, letterSpacing = 1.3.sp),
+                        color = Ember.Dim,
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        for (n in info.notes.take(3)) {
+                            Row {
+                                Box(Modifier.padding(top = 8.dp).size(6.dp).clip(CircleShape).background(Ember.Text))
+                                Spacer(Modifier.width(12.dp))
+                                Text(n, style = Txt.Body.copy(lineHeight = 22.sp), color = Ember.Text.copy(alpha = 0.88f), maxLines = 4, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(18.dp))
+                    UpdateFootnote(info)
                 }
             }
         } else {
