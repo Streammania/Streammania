@@ -619,6 +619,9 @@ private fun BoxScope.HeroDots(count: Int, index: Int, modifier: Modifier = Modif
 
 // ---------------- TV ----------------
 
+/** The height of the menu that floats over the top of Home on a TV. */
+internal val TV_MENU_SPACE = 76.dp
+
 @Composable
 fun HomeSection(vm: AppViewModel) {
     // Live Sport Now keeps itself up to date while Home is on screen.
@@ -636,8 +639,9 @@ fun HomeSection(vm: AppViewModel) {
     LaunchedEffect(scrolledDown) { vm.homeBarHidden = scrolledDown }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { vm.homeBarHidden = false } }
     when (val f = feedState) {
-        is LoadResult.Loading -> SkeletonHome()
-        is LoadResult.Err -> ErrorView(f.message) { vm.reload() }
+        // The menu floats over the top of Home, so everything but the banner starts below it.
+        is LoadResult.Loading -> Box(Modifier.padding(top = TV_MENU_SPACE)) { SkeletonHome() }
+        is LoadResult.Err -> Box(Modifier.padding(top = TV_MENU_SPACE)) { ErrorView(f.message) { vm.reload() } }
         is LoadResult.Ok -> {
             val feed = f.value
             LazyColumn(
@@ -648,6 +652,8 @@ fun HomeSection(vm: AppViewModel) {
                 val heroes = featuredFor(vm, feed)
                 if (heroes.isNotEmpty()) {
                     item(key = "hero") { TvHero(vm, repo, heroes) }
+                } else {
+                    item(key = "top") { Spacer(Modifier.height(TV_MENU_SPACE)) }
                 }
                 homeRows(vm, feed, edge = 48.dp, posterWidth = 132.dp, continueWidth = 300.dp, gap = 22.dp) { arranging = true }
             }
@@ -670,7 +676,7 @@ private fun TvHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
 
     // Short enough that the top of the first row shows underneath, so it's clear there's more below,
     // but it grows to fit its words (bigger text sizes, long titles) so nothing is cut off at the top.
-    Box(Modifier.fillMaxWidth().heightIn(min = 310.dp)) {
+    Box(Modifier.fillMaxWidth().heightIn(min = 310.dp + TV_MENU_SPACE)) {
         Crossfade(targetState = movie, label = "hero", modifier = Modifier.matchParentSize()) { m ->
             val art = if (m.streamId == movie.streamId) info?.backdrop?.takeIf { it.isNotBlank() } ?: m.poster else m.poster
             Box(Modifier.fillMaxSize()) {
@@ -685,7 +691,7 @@ private fun TvHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
         )
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(0f to Ember.Bg.copy(alpha = 0.55f), 0.25f to Color.Transparent, 0.62f to Color.Transparent, 1f to Ember.Bg)))
         Column(
-            Modifier.align(Alignment.BottomStart).padding(start = 48.dp, top = 36.dp, bottom = 20.dp).width(540.dp)
+            Modifier.align(Alignment.BottomStart).padding(start = 48.dp, top = TV_MENU_SPACE + 30.dp, bottom = 20.dp).width(540.dp)
         ) {
             Text("FEATURED FOR YOU", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim)
             Spacer(Modifier.height(6.dp))

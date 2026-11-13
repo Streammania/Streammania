@@ -11,6 +11,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Column
@@ -116,16 +117,11 @@ fun HomeScreen(vm: AppViewModel) {
 
     val hideBar = focusedTab < 0 && !reveal &&
         ((vm.tab == Tabs.GUIDE && vm.guideFullScreen) || (vm.tab == Tabs.HOME && vm.homeBarHidden))
-    // The same soft warm glow at the top of every page, like the guide.
-    Box(Modifier.fillMaxSize().background(Ember.Bg)) {
-    // Home's background fades to the highlighted film's or series' artwork, as on Apple TV.
-    HomeAmbientArt(if (vm.tab == Tabs.HOME && vm.homeArtwork) vm.homeArt else null)
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Ember.Glow.copy(alpha = 0.55f), androidx.compose.ui.graphics.Color.Transparent), endY = 620f))
-    ) {
-        AnimatedVisibility(visible = !hideBar, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+    // On Home the menu floats over the picture, which runs right up to the top as on Apple TV.
+    val overHome = vm.tab == Tabs.HOME
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var barHeightPx by remember { mutableIntStateOf(with(density) { TV_MENU_SPACE.roundToPx() }) }
+    val topBar: @Composable () -> Unit = {
         Row(
             // Kept snug so every tab fits on a TV: when it was too wide the Settings icon got squeezed out.
             Modifier.fillMaxWidth().padding(start = 40.dp, end = 40.dp, top = 22.dp, bottom = 12.dp),
@@ -166,6 +162,20 @@ fun HomeScreen(vm: AppViewModel) {
             Spacer(Modifier.width(12.dp))
             Text(formatClock(LocalNow.current), style = Txt.Label, color = Ember.Dim)
         }
+    }
+    // The same soft warm glow at the top of every page, like the guide.
+    Box(Modifier.fillMaxSize().background(Ember.Bg)) {
+    // Home's background fades to the highlighted film's or series' artwork, as on Apple TV.
+    HomeAmbientArt(if (vm.tab == Tabs.HOME && vm.homeArtwork) vm.homeArt else null)
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Ember.Glow.copy(alpha = 0.55f), androidx.compose.ui.graphics.Color.Transparent), endY = 620f))
+    ) {
+        // Other pages start below the menu; Home runs up behind it. (The menu itself is drawn once,
+        // over everything, so moving between tabs never rebuilds it and loses your place.)
+        AnimatedVisibility(visible = !hideBar && !overHome, enter = expandVertically(), exit = shrinkVertically()) {
+            Spacer(Modifier.fillMaxWidth().height(with(density) { barHeightPx.toDp() }))
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (vm.tab) {
@@ -181,6 +191,21 @@ fun HomeScreen(vm: AppViewModel) {
                 else -> SettingsSection(vm)
             }
         }
+    }
+    AnimatedVisibility(visible = !hideBar, enter = fadeIn(), exit = fadeOut()) {
+        // On Home, a soft shade behind the menu keeps it readable over any picture.
+        val shade by androidx.compose.animation.core.animateFloatAsState(if (overHome) 0.75f else 0f, label = "menuShade")
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .onSizeChanged { barHeightPx = it.height }
+                .background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        0f to Ember.Bg.copy(alpha = shade),
+                        1f to androidx.compose.ui.graphics.Color.Transparent,
+                    )
+                )
+        ) { topBar() }
     }
     }
 }
