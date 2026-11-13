@@ -2284,19 +2284,30 @@ fun VodPlayerScreen(vm: AppViewModel, items: List<VodItem>, startIndex: Int, sta
             }
         }
 
+        val upNextBottom by androidx.compose.animation.core.animateDpAsState(
+            when {
+                overlayVisible -> if (isTv) 150.dp else 110.dp
+                isTv -> 40.dp
+                else -> 28.dp
+            },
+            label = "upNextBottom",
+        )
         AnimatedVisibility(
             visible = upNext && panel == null && !scoresOpen,
             enter = fadeIn() + androidx.compose.animation.slideInHorizontally { it / 3 },
             exit = fadeOut(),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = if (isTv) 48.dp else 16.dp, bottom = if (isTv) 150.dp else 110.dp),
+                // Down in the corner, out of the way of the credits; it moves up only while the
+                // player's controls are showing, so it never sits on top of them.
+                .padding(end = if (isTv) 48.dp else 16.dp, bottom = upNextBottom),
         ) {
             val next = items.getOrNull(current + 1)
             if (next != null) {
                 UpNextCard(
                     next = next,
                     secondsLeft = if (counting) ((remainingMs + 999) / 1000).toInt() else null,
+                    remainingMs = if (counting) remainingMs else null,
                     onPlay = { nextEpisode(finished = true) },
                     onCancel = { upNextCancelled = true },
                 )
@@ -2739,52 +2750,84 @@ private fun SkipButton(forward: Boolean, seconds: Int, onClick: () -> Unit) {
 private const val UP_NEXT_MS = 15_000L
 
 /**
- * Apple TV's Up Next: a frosted card with the next episode's picture and name. Counting down, it
- * starts by itself; with autoplay off (or cancelled), it waits for you at the end.
+ * Apple TV's Up Next: a dark card in the corner with the next episode's picture, a ring counting
+ * down round the play button, the episode's name and the series. Counting down, it starts by itself;
+ * with autoplay off (or cancelled), it waits for you at the end.
  */
 @Composable
-private fun UpNextCard(next: VodItem, secondsLeft: Int?, onPlay: () -> Unit, onCancel: () -> Unit) {
+private fun UpNextCard(next: VodItem, secondsLeft: Int?, remainingMs: Long?, onPlay: () -> Unit, onCancel: () -> Unit) {
     val isTv = LocalIsTv.current
+    val code = next.subtitle.substringBefore("  ").trim()
+    val episodeName = cleanEpisodeName(next.subtitle.substringAfter("  ", "").trim(), next.title)
     Row(
         Modifier
-            .width(if (isTv) 440.dp else 340.dp)
-            .glassSurface(RoundedCornerShape(22.dp), Color(0xE0141418))
-            .padding(12.dp),
+            .width(if (isTv) 500.dp else 340.dp)
+            .glassSurface(RoundedCornerShape(24.dp), Color(0xF2121216))
+            .padding(if (isTv) 14.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
-                .width(if (isTv) 150.dp else 112.dp)
+                .width(if (isTv) 168.dp else 112.dp)
                 .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0x1FFFFFFF))
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0x1FFFFFFF)),
+            contentAlignment = Alignment.Center,
         ) {
             NetImage(next.image.ifBlank { next.seriesCover }, Modifier.fillMaxSize())
-            Box(
-                Modifier.align(Alignment.Center).size(34.dp).glassSurface(CircleShape, Color(0x59000000)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(EmberIcons.Play, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+            Box(Modifier.fillMaxSize().background(Color(0x33000000)))
+            // The play button, with a white ring that runs down with the countdown.
+            val ring = if (remainingMs != null) (remainingMs.toFloat() / UP_NEXT_MS).coerceIn(0f, 1f) else 1f
+            val sweep by androidx.compose.animation.core.animateFloatAsState(ring, label = "upNextRing")
+            Box(Modifier.size(if (isTv) 44.dp else 36.dp), contentAlignment = Alignment.Center) {
+                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                    val stroke = 3.dp.toPx()
+                    drawCircle(Color(0x99000000), radius = size.minDimension / 2)
+                    drawCircle(Color(0x40FFFFFF), radius = size.minDimension / 2 - stroke / 2, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+                    if (remainingMs != null) {
+                        drawArc(
+                            Color.White,
+                            startAngle = -90f,
+                            sweepAngle = 360f * sweep,
+                            useCenter = false,
+                            topLeft = androidx.compose.ui.geometry.Offset(stroke / 2, stroke / 2),
+                            size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                        )
+                    }
+                }
+                Icon(EmberIcons.Play, contentDescription = null, tint = Color.White, modifier = Modifier.size(if (isTv) 17.dp else 14.dp))
             }
         }
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                if (secondsLeft != null) "UP NEXT IN $secondsLeft" else "UP NEXT",
-                style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.1.sp),
+                if (secondsLeft != null) "NEXT EPISODE  ·  ${secondsLeft}s" else "NEXT EPISODE",
+                style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
                 color = Ember.Dim,
             )
-            Spacer(Modifier.height(3.dp))
-            Text(next.subtitle.substringBefore("  ").ifBlank { next.title }, style = Txt.Label.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val name = next.subtitle.substringAfter("  ", "").trim()
-            if (name.isNotEmpty()) Text(name, style = Txt.Caption, color = Ember.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
+            Text(
+                episodeName.ifBlank { code.ifBlank { next.title } },
+                style = Txt.Headline.copy(fontWeight = FontWeight.Bold),
+                color = Ember.Text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                listOf(cleanSeriesName(next.title), code).filter { it.isNotBlank() }.distinct().joinToString("  ·  "),
+                style = Txt.Caption,
+                color = Ember.Dim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(10.dp))
             if (isTv) {
-                RemoteHints(
-                    if (secondsLeft != null) listOf(Hint("OK", "Play now"), Hint("BACK", "Cancel"))
-                    else listOf(Hint("OK", "Play next episode")),
-                    always = true,
-                )
+                // What the remote does, as small chips: OK plays (white, like a highlighted button).
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    UpNextChip("OK", "Play now", primary = true)
+                    if (secondsLeft != null) UpNextChip("Back", "Cancel", primary = false)
+                }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PillButton("Play", icon = EmberIcons.Play, primary = true, onClick = onPlay)
@@ -2794,6 +2837,51 @@ private fun UpNextCard(next: VodItem, secondsLeft: Int?, onPlay: () -> Unit, onC
         }
     }
 }
+
+@Composable
+private fun UpNextChip(key: String, label: String, primary: Boolean) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(15.dp))
+            .background(if (primary) Color.White else Color(0x1FFFFFFF))
+            .padding(start = 6.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(9.dp))
+                .background(if (primary) Color(0x1A000000) else Color(0x24FFFFFF))
+                .padding(horizontal = 6.dp, vertical = 1.dp),
+        ) {
+            Text(key.uppercase(), style = Txt.Caption.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold), color = if (primary) Color.Black else Ember.Text)
+        }
+        Spacer(Modifier.width(7.dp))
+        Text(label, style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = if (primary) Color.Black else Ember.Text)
+    }
+}
+
+/**
+ * Providers often name episodes like "Ghosts (US) (2021) - S04E14 - Alexandra the Great". This
+ * keeps just the episode's own name; if there isn't one, it's left empty.
+ */
+internal fun cleanEpisodeName(raw: String, series: String): String {
+    var t = raw.trim()
+    val code = Regex("(?i)\\bS\\d{1,2}\\s*E\\d{1,3}\\b")
+    code.find(t)?.let { m -> t = t.substring(m.range.last + 1) }
+    for (name in listOf(series, cleanSeriesName(series))) {
+        if (name.isNotBlank() && t.startsWith(name, ignoreCase = true)) {
+            t = t.substring(name.length)
+            break
+        }
+    }
+    t = t.trim().trimStart('-', '–', '—', ':', '·', '|', ' ').trim()
+    // Just "Episode 14" adds nothing to the line underneath.
+    if (Regex("(?i)^(episode|ep\\.?)\\s*\\d+$").matches(t)) return ""
+    return t
+}
+
+/** "Ghosts (US) (2021)" → "Ghosts (US)": the year in brackets is clutter on a small card. */
+internal fun cleanSeriesName(raw: String): String = raw.replace(Regex("\\s*\\((19|20)\\d{2}\\)"), "").trim()
 
 /**
  * Apple TV style side panel over the picture: the film keeps playing while you choose.
