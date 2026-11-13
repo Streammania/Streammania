@@ -668,7 +668,8 @@ private fun TvHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
     var onFirst by remember { mutableStateOf(false) }
     var onLast by remember { mutableStateOf(false) }
 
-    Box(Modifier.fillMaxWidth().height(360.dp)) {
+    // Short enough that the top of the first row shows underneath, so it's clear there's more below.
+    Box(Modifier.fillMaxWidth().height(310.dp)) {
         Crossfade(targetState = movie, label = "hero") { m ->
             val art = if (m.streamId == movie.streamId) info?.backdrop?.takeIf { it.isNotBlank() } ?: m.poster else m.poster
             Box(Modifier.fillMaxSize()) {
@@ -683,7 +684,7 @@ private fun TvHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
         )
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Ember.Bg.copy(alpha = 0.55f), 0.25f to Color.Transparent, 0.62f to Color.Transparent, 1f to Ember.Bg)))
         Column(
-            Modifier.align(Alignment.BottomStart).padding(start = 48.dp, bottom = 26.dp).width(540.dp)
+            Modifier.align(Alignment.BottomStart).padding(start = 48.dp, bottom = 20.dp).width(540.dp)
         ) {
             Text("FEATURED FOR YOU", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim)
             Spacer(Modifier.height(6.dp))
