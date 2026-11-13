@@ -171,7 +171,7 @@ fun ChannelRow(
     val next = current?.let { c -> programmes.firstOrNull { it.start >= c.end } }
     val tvRow = LocalIsTv.current
     FocusBox(
-        modifier = Modifier.fillMaxWidth().height(if (compact) 54.dp else if (tvRow) 86.dp else 70.dp),
+        modifier = Modifier.fillMaxWidth().height(if (compact) 54.dp else if (tvRow) 78.dp else 70.dp),
         focusKey = focusKey,
         shape = RoundedCornerShape(16.dp),
         focusedScale = 1.02f,
@@ -232,10 +232,6 @@ fun ChannelRow(
                     Spacer(Modifier.height(if (compact) 3.dp else 6.dp))
                     Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(if (focused) Color(0x26000000) else Color(0x2EFFFFFF))) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(current.progress(now)).background(if (focused) Color.Black else Color.White))
-                    }
-                    if (next != null && !compact && tvRow) {
-                        Spacer(Modifier.height(4.dp))
-                        Text("Next: ${formatClock(next.start)} ${next.title}", style = Txt.Caption.copy(fontSize = 12.sp), color = faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
