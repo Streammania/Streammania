@@ -274,7 +274,7 @@ fun PhoneSeriesDetail(vm: AppViewModel, series: Series) {
                 val plot = info?.plot?.takeIf { it.isNotBlank() } ?: series.plot
                 when {
                     load is LoadResult.Loading -> SkeletonRows(Modifier.height(260.dp), rows = 4, underHeader = false)
-                    load is LoadResult.Err -> Text((load as LoadResult.Err).message, style = Txt.Body, color = Color(0xFFFF8A80))
+                    load is LoadResult.Err -> ErrorNote((load as LoadResult.Err).message)
                     plot.isNotBlank() -> Text(plot, style = Txt.Body, color = Ember.Text.copy(alpha = 0.9f), maxLines = 6, overflow = TextOverflow.Ellipsis)
                 }
             }

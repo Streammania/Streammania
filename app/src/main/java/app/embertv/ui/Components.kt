@@ -696,6 +696,21 @@ fun ErrorView(message: String, modifier: Modifier = Modifier, onRetry: () -> Uni
     }
 }
 
+/** A small frosted note for when part of a page couldn't load (the rest is still usable). */
+@Composable
+fun ErrorNote(message: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .glassSurface(RoundedCornerShape(16.dp), Color(0x14FFFFFF))
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(EmberIcons.Alert, contentDescription = null, tint = Ember.Dim, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(message, style = Txt.Label, color = Ember.Dim)
+    }
+}
+
 /** A frosted pill button with an icon: white with black text when selected, like the player buttons. */
 @Composable
 fun GlassButton(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, autoFocus: Boolean = false, onClick: () -> Unit) {

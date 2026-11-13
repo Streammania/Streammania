@@ -223,7 +223,7 @@ fun SeriesDetailScreen(vm: AppViewModel, series: Series) {
             }
             if (load is LoadResult.Err) {
                 Spacer(Modifier.height(16.dp))
-                Text((load as LoadResult.Err).message, style = Txt.Body, color = Color(0xFFFF8A80))
+                ErrorNote((load as LoadResult.Err).message)
             }
             if (info != null && info.seasons.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
