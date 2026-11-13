@@ -32,6 +32,9 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -170,7 +173,9 @@ fun SeriesDetailScreen(vm: AppViewModel, series: Series) {
 
     Box(Modifier.fillMaxSize().background(Ember.Bg)) {
         Backdrop(backdrop)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 64.dp, top = 32.dp, bottom = 16.dp)) {
+        val pageScroll = rememberScrollState()
+        val pageScope = rememberCoroutineScope()
+        Column(Modifier.fillMaxSize().verticalScroll(pageScroll).padding(start = 64.dp, top = 32.dp, bottom = 16.dp)) {
             Text(series.name, style = Txt.Hero, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(end = 64.dp))
             Spacer(Modifier.height(8.dp))
             val meta = listOfNotNull(
@@ -191,12 +196,19 @@ fun SeriesDetailScreen(vm: AppViewModel, series: Series) {
                 if (load is LoadResult.Loading) "Loading episodes…" else plot,
                 style = Txt.Body,
                 color = Ember.Text.copy(alpha = 0.9f),
+                // Always two lines' worth of room, at any text size, so the page doesn't jump
+                // as different episodes' summaries come and go.
+                minLines = 2,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.width(620.dp).height(44.dp),
+                modifier = Modifier.width(620.dp),
             )
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(
+                // Back on the buttons: the page slides back to the top so the title shows.
+                Modifier.onFocusChanged { if (it.hasFocus) pageScope.launch { pageScroll.animateScrollTo(0) } },
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
                 if (start != null && info != null) {
                     val resumed = lastEpisodeId == start.id
                     TvButton(

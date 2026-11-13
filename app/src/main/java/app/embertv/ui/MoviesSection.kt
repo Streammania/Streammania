@@ -26,6 +26,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.launch
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -194,7 +196,9 @@ fun MovieDetailScreen(vm: AppViewModel, movie: Movie) {
 
     Box(Modifier.fillMaxSize().background(Ember.Bg)) {
         Backdrop(backdrop)
-        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize()) {
+        val pageList = androidx.compose.foundation.lazy.rememberLazyListState()
+        val pageScope = androidx.compose.runtime.rememberCoroutineScope()
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), state = pageList) {
         item(key = "hero") {
         // At least a full screen, but taller when the words need it (bigger text, long plots), so
         // the title is never pushed off the top.
@@ -251,7 +255,17 @@ fun MovieDetailScreen(vm: AppViewModel, movie: Movie) {
                     }
                 }
                 Spacer(Modifier.height(30.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(
+                    // Back on the buttons: slide back to the top so the title shows (when it all fits).
+                    Modifier.onFocusChanged { state ->
+                        if (state.hasFocus) pageScope.launch {
+                            val info0 = pageList.layoutInfo
+                            val hero = info0.visibleItemsInfo.firstOrNull { it.index == 0 }
+                            if (hero != null && hero.size <= info0.viewportEndOffset - info0.viewportStartOffset) pageList.animateScrollToItem(0)
+                        }
+                    },
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
                     if (resume > 0) {
                         TvButton(
                             "Resume from ${formatMs(resume)}",
