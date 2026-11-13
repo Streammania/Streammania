@@ -449,9 +449,8 @@ fun MatchFinderDialog(vm: AppViewModel, match: Match) {
             Modifier
                 .width(if (isTv) 600.dp else 500.dp)
                 .heightIn(max = if (isTv) 520.dp else 660.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(if (isTv) 8.dp else 18.dp),
+                .liquidGlass(RoundedCornerShape(28.dp))
+                .padding(if (isTv) 24.dp else 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (isTv) {

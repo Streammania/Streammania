@@ -737,9 +737,8 @@ private fun GroupPicker(categories: List<Category>, selectedId: String, onDismis
             Modifier
                 .width(520.dp)
                 .heightIn(max = 500.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(8.dp),
+                .liquidGlass(RoundedCornerShape(28.dp))
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SheetTitle("Channel group", eyebrow = "TV guide")
@@ -773,9 +772,8 @@ internal fun DayPicker(now: Long, showing: Long, onDismiss: () -> Unit, onPick: 
             Modifier
                 .width(520.dp)
                 .heightIn(max = 500.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(8.dp),
+                .liquidGlass(RoundedCornerShape(28.dp))
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SheetTitle("Go to day", eyebrow = "TV guide", subtitle = "Earlier days play from catch-up where your provider keeps it")
@@ -879,9 +877,8 @@ internal fun ProgrammeDialog(vm: AppViewModel, focus: GuideFocus, channels: List
         Column(
             Modifier
                 .width(if (isTv) 600.dp else 520.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(if (isTv) 8.dp else 20.dp),
+                .liquidGlass(RoundedCornerShape(28.dp))
+                .padding(if (isTv) 24.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SheetTitle(p.title, eyebrow = eyebrow, subtitle = p.description.takeIf { it.isNotBlank() }, subtitleLines = if (isTv) 4 else 6)

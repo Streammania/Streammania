@@ -951,8 +951,7 @@ fun ArrangeHomeDialog(vm: AppViewModel, onDone: () -> Unit) {
                 .widthIn(max = 520.dp)
                 .fillMaxWidth()
                 .heightIn(max = if (isTv) 520.dp else 600.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
+                .liquidGlass(RoundedCornerShape(28.dp))
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -1118,8 +1117,7 @@ private fun TileOrderDialog(vm: AppViewModel, channels: Boolean, onDone: () -> U
                 .widthIn(max = 520.dp)
                 .fillMaxWidth()
                 .heightIn(max = if (isTv) 520.dp else 640.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
+                .liquidGlass(RoundedCornerShape(28.dp))
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {

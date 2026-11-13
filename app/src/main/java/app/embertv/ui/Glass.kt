@@ -139,8 +139,23 @@ fun Modifier.frosted(
 fun Modifier.glassSurface(shape: Shape, fill: Color = Color(0x1FFFFFFF)): Modifier = this
     .clip(shape)
     .background(fill)
-    .background(Brush.verticalGradient(listOf(Color(0x1AFFFFFF), Color.Transparent)))
-    .border(0.6.dp, Color(0x33FFFFFF), shape)
+    // Liquid Glass: a sheen running corner to corner, light along the top, and a rim that's
+    // brightest where the light catches it (top left) and fades round the sides.
+    .background(GlassSheen)
+    .background(GlassTopLight)
+    .border(0.8.dp, GlassRim, shape)
+
+/** The sheen across a glass surface, top left to bottom right. */
+val GlassSheen = Brush.linearGradient(0f to Color(0x17FFFFFF), 0.45f to Color(0x05FFFFFF), 0.8f to Color.Transparent, 1f to Color(0x0AFFFFFF))
+
+/** Light along a glass surface's top edge. */
+val GlassTopLight = Brush.verticalGradient(0f to Color(0x17FFFFFF), 0.22f to Color.Transparent)
+
+/** A glass edge: bright where the light catches it, fading round the sides, a little light again bottom right. */
+val GlassRim = Brush.linearGradient(0f to Color(0x66FFFFFF), 0.3f to Color(0x1FFFFFFF), 0.7f to Color(0x0FFFFFFF), 1f to Color(0x38FFFFFF))
+
+/** The same edge, softer, for tiles and buttons that sit in rows. */
+val GlassRimSoft = Brush.linearGradient(0f to Color(0x47FFFFFF), 0.35f to Color(0x14FFFFFF), 0.7f to Color(0x0AFFFFFF), 1f to Color(0x24FFFFFF))
 
 /**
  * Apple's Liquid Glass, as far as a Fire Stick can go: a smoky glass slab with a soft sheen running
@@ -152,20 +167,16 @@ fun Modifier.liquidGlass(shape: Shape, tint: Color = Color(0xEB1B1B21)): Modifie
     .shadow(30.dp, shape, ambientColor = Color.Black, spotColor = Color.Black)
     .clip(shape)
     .background(tint)
-    .background(Brush.linearGradient(0f to Color(0x2BFFFFFF), 0.42f to Color(0x08FFFFFF), 0.75f to Color(0x03FFFFFF), 1f to Color(0x12FFFFFF)))
-    .background(Brush.verticalGradient(0f to Color(0x1AFFFFFF), 0.16f to Color.Transparent))
-    .border(
-        1.2.dp,
-        Brush.linearGradient(0f to Color(0x8CFFFFFF), 0.3f to Color(0x1FFFFFFF), 0.7f to Color(0x0FFFFFFF), 1f to Color(0x4DFFFFFF)),
-        shape,
-    )
+    .background(SlabSheen)
+    .background(GlassTopLight)
+    .border(1.2.dp, SlabRim, shape)
+
+private val SlabSheen = Brush.linearGradient(0f to Color(0x2BFFFFFF), 0.42f to Color(0x08FFFFFF), 0.75f to Color(0x03FFFFFF), 1f to Color(0x12FFFFFF))
+private val SlabRim = Brush.linearGradient(0f to Color(0x8CFFFFFF), 0.3f to Color(0x1FFFFFFF), 0.7f to Color(0x0FFFFFFF), 1f to Color(0x4DFFFFFF))
 
 // ---------------- Dialogs ----------------
 
-/**
- * Panel colour for pop-ups. Phones get a frosted sheet (the screen behind is blurred). TVs get no
- * panel at all: like tvOS, the screen dims right down and the pop-up floats in the middle.
- */
+/** Panel colour for pop-ups (older style; pop-ups now use [liquidGlass]). */
 @Composable
 fun dialogPanelColor(): Color = if (LocalIsTv.current) Color.Transparent else Color(0xF21C1C21)
 
@@ -252,7 +263,8 @@ fun SheetOption(
         shape = RoundedCornerShape(if (isTv) 16.dp else 14.dp),
         focusedScale = 1.05f,
         // Solid on TVs: without blur, see-through buttons would show the screen behind.
-        color = if (white) Color.White else if (isTv) Color(0xFF2A2A31) else Color(0x1FFFFFFF),
+        // Glass pills on the glass card; white when chosen.
+        color = if (white) Color.White else Color(0x1FFFFFFF),
         focusedColor = Color.White,
         autoFocus = autoFocus,
         onClick = onClick,

@@ -54,9 +54,8 @@ fun PlayerPickerDialog(
             Modifier
                 .width(if (isTv) 520.dp else 440.dp)
                 .heightIn(max = if (isTv) 520.dp else 640.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(if (isTv) 8.dp else 20.dp),
+                .liquidGlass(RoundedCornerShape(28.dp))
+                .padding(if (isTv) 24.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SheetTitle(title, subtitle = subtitle)

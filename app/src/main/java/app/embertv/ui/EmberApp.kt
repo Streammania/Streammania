@@ -238,9 +238,8 @@ private fun ReminderDialog(vm: AppViewModel, r: app.embertv.data.Reminder) {
         Column(
             Modifier
                 .width(if (isTv) 520.dp else 440.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(if (isTv) 8.dp else 20.dp),
+                .liquidGlass(RoundedCornerShape(28.dp))
+                .padding(if (isTv) 24.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             ChannelLogo(r.channelIcon, r.channelName, Modifier.size(width = 96.dp, height = 64.dp))
@@ -275,9 +274,8 @@ private fun SleepWarningDialog(vm: AppViewModel, sleepAt: Long) {
         Column(
             Modifier
                 .width(if (isTv) 480.dp else 420.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(if (isTv) 8.dp else 20.dp),
+                .liquidGlass(RoundedCornerShape(28.dp))
+                .padding(if (isTv) 24.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(EmberIcons.Moon, contentDescription = null, tint = Ember.Text, modifier = Modifier.size(40.dp))
@@ -307,9 +305,8 @@ private fun KickoffDialog(vm: AppViewModel, m: app.embertv.data.Match) {
         Column(
             Modifier
                 .width(if (isTv) 520.dp else 440.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(if (isTv) 8.dp else 20.dp),
+                .liquidGlass(RoundedCornerShape(28.dp))
+                .padding(if (isTv) 24.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // A small scoreboard, like the goal alerts: crest tiles either side of the kick-off time.
@@ -360,9 +357,8 @@ private fun CrashDialog(note: String, onDismiss: () -> Unit) {
         Column(
             Modifier
                 .width(if (isTv) 620.dp else 440.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(if (isTv) 8.dp else 20.dp),
+                .liquidGlass(RoundedCornerShape(28.dp))
+                .padding(if (isTv) 24.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SheetTitle(

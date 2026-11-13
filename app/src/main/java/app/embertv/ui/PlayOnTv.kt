@@ -63,10 +63,9 @@ fun LinkedTvsDialog(vm: AppViewModel, onDismiss: () -> Unit) {
             Modifier
                 .width(560.dp)
                 .heightIn(max = 620.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
+                .liquidGlass(RoundedCornerShape(28.dp))
                 .verticalScroll(rememberScrollState())
-                .padding(8.dp),
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(EmberIcons.Tv, contentDescription = null, tint = Ember.Text, modifier = Modifier.size(44.dp))
@@ -157,9 +156,8 @@ fun TvPairingDialog(vm: AppViewModel) {
         Column(
             Modifier
                 .width(560.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(8.dp),
+                .liquidGlass(RoundedCornerShape(28.dp))
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(EmberIcons.Tv, contentDescription = null, tint = Ember.Text, modifier = Modifier.size(44.dp))
@@ -208,8 +206,7 @@ fun CastSheet(vm: AppViewModel) {
             Modifier
                 .width(440.dp)
                 .heightIn(max = 640.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
+                .liquidGlass(RoundedCornerShape(28.dp))
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

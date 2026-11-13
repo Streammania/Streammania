@@ -146,8 +146,7 @@ fun TextEntryDialog(
                     .padding(top = 48.dp, start = 16.dp, end = 16.dp)
                     .widthIn(max = 600.dp)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(dialogPanelColor())
+                    .liquidGlass(RoundedCornerShape(28.dp))
                     .padding(horizontal = 24.dp, vertical = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {

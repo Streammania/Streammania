@@ -897,9 +897,8 @@ fun SettingsSection(vm: AppViewModel) {
             Column(
                 Modifier
                     .width(if (isTv) 520.dp else 440.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(dialogPanelColor())
-                    .padding(if (isTv) 8.dp else 20.dp),
+                    .liquidGlass(RoundedCornerShape(28.dp))
+                    .padding(if (isTv) 24.dp else 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 SheetTitle(
@@ -1013,9 +1012,8 @@ private fun LeaguePicker(vm: AppViewModel, onDone: () -> Unit) {
             Modifier
                 .width(if (isTv) 560.dp else 440.dp)
                 .heightIn(max = if (isTv) 520.dp else 640.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(if (isTv) 8.dp else 20.dp),
+                .liquidGlass(RoundedCornerShape(28.dp))
+                .padding(if (isTv) 24.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SheetTitle("My leagues", eyebrow = "Live Sport Now", subtitle = "Ticked competitions come first on Home")
@@ -1070,9 +1068,8 @@ private fun AudioSubtitlesSheet(vm: AppViewModel, onDone: () -> Unit) {
         Column(
             Modifier
                 .width(if (isTv) 520.dp else 440.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(if (isTv) 8.dp else 20.dp),
+                .liquidGlass(RoundedCornerShape(28.dp))
+                .padding(if (isTv) 24.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SheetTitle("Audio & subtitles", eyebrow = "Watching", subtitle = "Used when a channel or video offers a choice. Changes apply from the next one you play.")
@@ -1108,8 +1105,7 @@ private fun BackdropPicker(vm: AppViewModel, onDone: () -> Unit) {
                 .widthIn(max = 460.dp)
                 .fillMaxWidth()
                 .heightIn(max = if (isTv) 520.dp else 640.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
+                .liquidGlass(RoundedCornerShape(28.dp))
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {

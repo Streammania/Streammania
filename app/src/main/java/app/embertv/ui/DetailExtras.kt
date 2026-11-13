@@ -106,9 +106,8 @@ private fun ActorSheet(vm: AppViewModel, person: CastMember, onDismiss: () -> Un
             Modifier
                 // Phones: most of the screen's width, so it fits small phones too.
                 .then(if (isTv) Modifier.width(760.dp) else Modifier.fillMaxWidth(0.92f).widthIn(max = 420.dp))
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(vertical = if (isTv) 10.dp else 20.dp),
+                .liquidGlass(androidx.compose.foundation.shape.RoundedCornerShape(28.dp))
+                .padding(vertical = if (isTv) 24.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             val f = found

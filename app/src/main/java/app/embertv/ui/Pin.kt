@@ -95,8 +95,7 @@ fun PinDialog(
         Column(
             Modifier
                 .width(if (isTv) 400.dp else 340.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(dialogPanelColor())
+                .liquidGlass(RoundedCornerShape(24.dp))
                 .onPreviewKeyEvent { ev ->
                     if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     when (val code = ev.nativeKeyEvent.keyCode) {

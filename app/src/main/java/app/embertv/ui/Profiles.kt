@@ -385,8 +385,7 @@ private fun ProfileEditor(vm: AppViewModel, initial: Profile?, onDone: () -> Uni
         Column(
             Modifier
                 .width(if (isTv) 560.dp else 520.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
+                .liquidGlass(RoundedCornerShape(28.dp))
                 .verticalScroll(rememberScrollState())
                 .padding(if (isTv) 26.dp else 22.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -519,9 +518,8 @@ private fun ProfileEditor(vm: AppViewModel, initial: Profile?, onDone: () -> Uni
             Column(
                 Modifier
                     .width(if (isTv) 520.dp else 440.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(dialogPanelColor())
-                    .padding(if (isTv) 8.dp else 20.dp),
+                    .liquidGlass(RoundedCornerShape(28.dp))
+                    .padding(if (isTv) 24.dp else 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 ProfileAvatar(initial, 64.dp)

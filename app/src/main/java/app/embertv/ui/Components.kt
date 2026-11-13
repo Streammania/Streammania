@@ -291,8 +291,8 @@ fun FocusBox(
             .then(
                 if (glassEdge && !focused && color.alpha > 0f && color.alpha < 0.5f) {
                     Modifier
-                        .background(Brush.verticalGradient(listOf(Color(0x12FFFFFF), Color.Transparent)))
-                        .border(0.6.dp, Color(0x24FFFFFF), shape)
+                        .background(GlassSheen)
+                        .border(0.8.dp, GlassRimSoft, shape)
                 } else {
                     Modifier
                 }
