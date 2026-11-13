@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.layout.ContentScale
@@ -388,107 +390,150 @@ private fun CrashDialog(note: String, onDismiss: () -> Unit) {
 
 /**
  * A new version, Apple "What's New" style: the app icon, the version, a line on what it's about,
- * a few points in a glass panel, then Install now (white) and Not now. While it downloads, the
- * buttons become a progress bar.
+ * a few points in a panel, then Install now (white) and Not now. On a TV the points sit beside the
+ * rest so it always fits the screen. While it downloads, the buttons become a progress bar.
  */
 @Composable
 private fun UpdateDialog(vm: AppViewModel) {
     val info = vm.update ?: return
     val isTv = LocalIsTv.current
     val progress = vm.updateProgress
-    val bold = androidx.compose.ui.text.font.FontWeight.Bold
     val semi = androidx.compose.ui.text.font.FontWeight.SemiBold
-    Dialog(onDismissRequest = { if (progress == null) vm.dismissUpdate() }) {
+    Dialog(
+        onDismissRequest = { if (progress == null) vm.dismissUpdate() },
+        // The TV version is wider than Android's usual pop-up allows.
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = !isTv),
+    ) {
         DialogBackdropBlur()
-        Column(
-            Modifier
-                .width(if (isTv) 560.dp else 440.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogPanelColor())
-                .padding(horizontal = if (isTv) 30.dp else 22.dp, vertical = if (isTv) 26.dp else 22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            EmberMark(if (isTv) 76.dp else 68.dp)
-            Spacer(Modifier.height(14.dp))
-            Text(
-                "UPDATE AVAILABLE",
-                style = Txt.Caption.copy(fontWeight = semi, letterSpacing = 1.3.sp),
-                color = Ember.Dim,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text("Streammania ${info.versionName}", style = Txt.Title.copy(fontWeight = bold), textAlign = TextAlign.Center)
+        if (isTv && info.notes.isNotEmpty()) {
+            // TV: side by side, so it always fits the screen, even with bigger text.
+            Row(
+                Modifier.width(820.dp).padding(horizontal = 24.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.width(340.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    UpdateHeader(info, iconSize = 64.dp)
+                    Spacer(Modifier.height(20.dp))
+                    UpdateButtons(vm, progress, Modifier.fillMaxWidth())
+                }
+                Spacer(Modifier.width(32.dp))
+                Column(Modifier.weight(1f)) {
+                    UpdateNotes(info, solid = true, lines = 3)
+                    Spacer(Modifier.height(10.dp))
+                    UpdateFootnote(info, Modifier.padding(start = 6.dp))
+                }
+            }
+        } else {
+            Column(
+                Modifier
+                    .width(if (isTv) 480.dp else 440.dp)
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(dialogPanelColor())
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = if (isTv) 24.dp else 22.dp, vertical = if (isTv) 18.dp else 22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                UpdateHeader(info, iconSize = if (isTv) 64.dp else 68.dp)
+                if (info.notes.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    UpdateNotes(info, solid = isTv, lines = 2)
+                }
+                Spacer(Modifier.height(12.dp))
+                UpdateFootnote(info)
+                Spacer(Modifier.height(20.dp))
+                UpdateButtons(vm, progress, Modifier.width(if (isTv) 360.dp else 400.dp))
+            }
+        }
+    }
+}
+
+/** The app icon, "UPDATE AVAILABLE", the new version and a line on what it's about. */
+@Composable
+private fun UpdateHeader(info: app.embertv.data.UpdateInfo, iconSize: androidx.compose.ui.unit.Dp) {
+    val semi = androidx.compose.ui.text.font.FontWeight.SemiBold
+    EmberMark(iconSize)
+    Spacer(Modifier.height(12.dp))
+    Text("UPDATE AVAILABLE", style = Txt.Caption.copy(fontWeight = semi, letterSpacing = 1.3.sp), color = Ember.Dim)
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "Streammania ${info.versionName}",
+        style = Txt.Title.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+        textAlign = TextAlign.Center,
+    )
+    Spacer(Modifier.height(6.dp))
+    Text(
+        info.headline.ifBlank { "A new version is ready to install." },
+        style = Txt.Body,
+        color = Ember.Dim,
+        textAlign = TextAlign.Center,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/** What's new: a few short points in a frosted panel (more solid on a TV, so the page behind doesn't show through). */
+@Composable
+private fun UpdateNotes(info: app.embertv.data.UpdateInfo, solid: Boolean, lines: Int) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .glassSurface(RoundedCornerShape(18.dp), if (solid) Color(0xF01C1C21) else Color(0x12FFFFFF))
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("What's new", style = Txt.Label.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Ember.Text)
+        for (n in info.notes) {
+            Row {
+                Box(Modifier.padding(top = 7.dp).size(5.dp).clip(CircleShape).background(Ember.Dim))
+                Spacer(Modifier.width(10.dp))
+                Text(n, style = Txt.Caption.copy(fontSize = 13.sp, lineHeight = 18.sp), color = Ember.Dim, maxLines = lines, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun UpdateFootnote(info: app.embertv.data.UpdateInfo, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Icon(EmberIcons.Lock, contentDescription = null, tint = Ember.Faint, modifier = Modifier.size(12.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "${app.embertv.BuildConfig.VERSION_NAME} → ${info.versionName}  ·  Your login and favourites stay",
+            style = Txt.Caption,
+            color = Ember.Faint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** Install now (white) and Not now; while downloading, a progress bar in their place. */
+@Composable
+private fun UpdateButtons(vm: AppViewModel, progress: Float?, modifier: Modifier) {
+    val isTv = LocalIsTv.current
+    val semi = androidx.compose.ui.text.font.FontWeight.SemiBold
+    if (progress != null) {
+        Column(modifier) {
+            ProgressBar(progress, Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+            Row {
+                Text(if (progress >= 1f) "Opening the installer…" else "Downloading…", style = Txt.Caption, color = Ember.Dim)
+                Spacer(Modifier.weight(1f))
+                Text("${(progress * 100).toInt()}%", style = Txt.Caption.copy(fontWeight = semi), color = Ember.Text)
+            }
+        }
+    } else if (!isTv) {
+        Column(modifier) {
+            PillButton("Install now", Modifier.fillMaxWidth(), primary = true) { vm.installUpdate() }
             Spacer(Modifier.height(6.dp))
-            Text(
-                info.headline.ifBlank { "A new version is ready to install." },
-                style = Txt.Body,
-                color = Ember.Dim,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            // What's new: a few short points in a frosted panel.
-            if (info.notes.isNotEmpty()) {
-                Spacer(Modifier.height(16.dp))
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .glassSurface(RoundedCornerShape(18.dp), Color(0x12FFFFFF))
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(9.dp),
-                ) {
-                    Text("What's new", style = Txt.Label.copy(fontWeight = semi), color = Ember.Text)
-                    for (n in info.notes) {
-                        Row {
-                            Box(
-                                Modifier
-                                    .padding(top = 7.dp)
-                                    .size(5.dp)
-                                    .clip(CircleShape)
-                                    .background(Ember.Dim)
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(n, style = Txt.Caption.copy(fontSize = 13.sp, lineHeight = 18.sp), color = Ember.Dim, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
+            Box(Modifier.fillMaxWidth().height(44.dp).pressable { vm.dismissUpdate() }, contentAlignment = Alignment.Center) {
+                Text("Not now", style = Txt.Label.copy(fontWeight = semi), color = Ember.Dim)
             }
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(EmberIcons.Lock, contentDescription = null, tint = Ember.Faint, modifier = Modifier.size(12.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "${app.embertv.BuildConfig.VERSION_NAME} → ${info.versionName}  ·  Your login and favourites stay",
-                    style = Txt.Caption,
-                    color = Ember.Faint,
-                    maxLines = 1,
-                )
-            }
-            Spacer(Modifier.height(20.dp))
-            if (progress != null) {
-                Column(Modifier.width(if (isTv) 360.dp else 320.dp)) {
-                    ProgressBar(progress, Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(8.dp))
-                    Row {
-                        Text(if (progress >= 1f) "Opening the installer…" else "Downloading…", style = Txt.Caption, color = Ember.Dim)
-                        Spacer(Modifier.weight(1f))
-                        Text("${(progress * 100).toInt()}%", style = Txt.Caption.copy(fontWeight = semi), color = Ember.Text)
-                    }
-                }
-            } else if (!isTv) {
-                PillButton("Install now", Modifier.fillMaxWidth(), primary = true) { vm.installUpdate() }
-                Spacer(Modifier.height(6.dp))
-                Box(
-                    Modifier.fillMaxWidth().height(44.dp).pressable { vm.dismissUpdate() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("Not now", style = Txt.Label.copy(fontWeight = semi), color = Ember.Dim)
-                }
-            } else {
-                Column(Modifier.width(360.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SheetOption("Install now", focusKey = "update:install", autoFocus = true, primary = true) { vm.installUpdate() }
-                    SheetOption("Not now", focusKey = "update:later", subtitle = "It'll be in Settings when you want it") { vm.dismissUpdate() }
-                }
-            }
+        }
+    } else {
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SheetOption("Install now", focusKey = "update:install", autoFocus = true, primary = true) { vm.installUpdate() }
+            SheetOption("Not now", focusKey = "update:later") { vm.dismissUpdate() }
         }
     }
 }
