@@ -682,10 +682,11 @@ fun SettingsSection(vm: AppViewModel) {
                     "Cast photos, trailers and suggestions",
                     focusKey = "set:tmdb",
                 ) { editingTmdb = true }
+                val waiting = vm.updateAvailable
                 SettingRow(
-                    "Check for updates",
-                    "Version ${app.embertv.BuildConfig.VERSION_NAME}",
-                    "Updates install straight from the app",
+                    if (waiting != null) "Update available" else "Check for updates",
+                    if (waiting != null) "New: ${waiting.versionName}" else "Version ${app.embertv.BuildConfig.VERSION_NAME}",
+                    if (waiting != null) "Select to see what's new and install" else "Updates install straight from the app",
                     focusKey = "set:update",
                 ) { vm.checkForUpdates(manual = true) }
                 SettingRow("Refresh everything now", "", "Films and series also update by themselves", focusKey = "set:refresh") {

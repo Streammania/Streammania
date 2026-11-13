@@ -615,6 +615,18 @@ class Prefs(context: Context) {
             sp.edit().putString(pk("recent_searches"), a.toString()).apply()
         }
 
+    /** "Not now" on an update: that version (versionCode) isn't offered again until [updateSnoozedUntil]. */
+    var updateSnoozedCode: Int
+        get() = sp.getInt("update_snoozed_code", 0)
+        set(value) {
+            sp.edit().putInt("update_snoozed_code", value).apply()
+        }
+    var updateSnoozedUntil: Long
+        get() = sp.getLong("update_snoozed_until", 0L)
+        set(value) {
+            sp.edit().putLong("update_snoozed_until", value).apply()
+        }
+
     /** Whether a stalling channel switches to another copy of itself by itself. */
     var autoRescue: Boolean
         get() = sp.getBoolean("auto_rescue", true)
@@ -815,7 +827,7 @@ class Prefs(context: Context) {
 }
 
 /** Kept on each device: sign-in, pairings and how this screen is held. */
-private val DEVICE_ONLY = setOf("server", "user", "pass", "paired_tvs", "tv_tokens", "screen_direction", "last_profile", "match_frame_rate", "hdr_hint", "picture_mode", "external_player", "last_crash", "last_server", "last_user")
+private val DEVICE_ONLY = setOf("server", "user", "pass", "paired_tvs", "tv_tokens", "screen_direction", "last_profile", "match_frame_rate", "hdr_hint", "picture_mode", "external_player", "last_crash", "last_server", "last_user", "update_snoozed_code", "update_snoozed_until")
 
 /** Rows Home leaves off until switched on: Home starts with six rows instead of eleven. */
 val DEFAULT_HOME_HIDDEN = setOf("recent-channels", "fav-channels", "live", "movies", "series")

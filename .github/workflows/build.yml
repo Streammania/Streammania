@@ -61,6 +61,9 @@ jobs:
           body: |
             Install on your TV with the Downloader app using:
             https://github.com/${{ github.repository }}/releases/latest/download/Streammania.apk
+
+            <!--whats-new-->
+            ${{ github.event.head_commit.message }}
           files: |
             Streammania.apk
             EmberTV.apk

@@ -668,9 +668,10 @@ private fun TvHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
     var onFirst by remember { mutableStateOf(false) }
     var onLast by remember { mutableStateOf(false) }
 
-    // Short enough that the top of the first row shows underneath, so it's clear there's more below.
-    Box(Modifier.fillMaxWidth().height(310.dp)) {
-        Crossfade(targetState = movie, label = "hero") { m ->
+    // Short enough that the top of the first row shows underneath, so it's clear there's more below,
+    // but it grows to fit its words (bigger text sizes, long titles) so nothing is cut off at the top.
+    Box(Modifier.fillMaxWidth().heightIn(min = 310.dp)) {
+        Crossfade(targetState = movie, label = "hero", modifier = Modifier.matchParentSize()) { m ->
             val art = if (m.streamId == movie.streamId) info?.backdrop?.takeIf { it.isNotBlank() } ?: m.poster else m.poster
             Box(Modifier.fillMaxSize()) {
                 NetImage(art, Modifier.fillMaxSize())
@@ -678,13 +679,13 @@ private fun TvHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
         }
         // Apple TV style: the picture fills the width, fading softly into the page on the left and below.
         Box(
-            Modifier.fillMaxSize().background(
+            Modifier.matchParentSize().background(
                 Brush.horizontalGradient(0f to Ember.Bg.copy(alpha = 0.92f), 0.35f to Ember.Bg.copy(alpha = 0.55f), 0.65f to Color.Transparent)
             )
         )
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Ember.Bg.copy(alpha = 0.55f), 0.25f to Color.Transparent, 0.62f to Color.Transparent, 1f to Ember.Bg)))
+        Box(Modifier.matchParentSize().background(Brush.verticalGradient(0f to Ember.Bg.copy(alpha = 0.55f), 0.25f to Color.Transparent, 0.62f to Color.Transparent, 1f to Ember.Bg)))
         Column(
-            Modifier.align(Alignment.BottomStart).padding(start = 48.dp, bottom = 20.dp).width(540.dp)
+            Modifier.align(Alignment.BottomStart).padding(start = 48.dp, top = 36.dp, bottom = 20.dp).width(540.dp)
         ) {
             Text("FEATURED FOR YOU", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim)
             Spacer(Modifier.height(6.dp))
@@ -695,7 +696,7 @@ private fun TvHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
                 info?.genre?.takeIf { it.isNotBlank() },
                 ratingLabel(info?.rating ?: movie.rating),
             ).joinToString("   ·   ")
-            if (meta.isNotEmpty()) Text(meta, style = Txt.Label, color = Ember.Dim, maxLines = 1)
+            if (meta.isNotEmpty()) Text(meta, style = Txt.Label, color = Ember.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val plot = info?.plot
             if (!plot.isNullOrBlank()) {
                 Spacer(Modifier.height(8.dp))

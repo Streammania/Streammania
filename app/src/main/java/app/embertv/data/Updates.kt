@@ -7,7 +7,15 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
-data class UpdateInfo(val versionCode: Int, val versionName: String, val apkUrl: String)
+data class UpdateInfo(
+    val versionCode: Int,
+    val versionName: String,
+    val apkUrl: String,
+    /** One line on what this version is about, from the release notes ("" if there aren't any). */
+    val headline: String = "",
+    /** Up to four short "what's new" points. */
+    val notes: List<String> = emptyList(),
+)
 
 /** Checks the GitHub releases this app is built into and downloads newer APKs. */
 object Updates {
@@ -26,13 +34,37 @@ object Updates {
                 val code = tag.substringAfterLast('-').toIntOrNull() ?: return@withContext null
                 val asset = asArray(root.opt("assets")).objects().firstOrNull { it.optString("name", "").endsWith(".apk") }
                     ?: return@withContext null
-                UpdateInfo(code, "1.0.$code", asset.optString("browser_download_url", ""))
+                val (headline, notes) = whatsNew(root.optString("body", ""))
+                UpdateInfo(code, "1.0.$code", asset.optString("browser_download_url", ""), headline, notes)
             } finally {
                 c.disconnect()
             }
         } catch (e: Exception) {
             null
         }
+    }
+
+    /**
+     * The "what's new" part of a release's notes: everything after the marker the build adds,
+     * without the sign-off lines. The first line is the headline; "- " lines are the points
+     * (a point's wrapped lines are joined back up).
+     */
+    internal fun whatsNew(body: String): Pair<String, List<String>> {
+        val marker = "<!--whats-new-->"
+        if (!body.contains(marker)) return "" to emptyList()
+        val lines = body.substringAfter(marker).lines()
+            .map { it.trimEnd() }
+            .filterNot { it.startsWith("Co-Authored-By:", true) || it.startsWith("Claude-Session:", true) }
+        val headline = lines.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        val points = ArrayList<String>()
+        for (l in lines) {
+            val t = l.trim()
+            when {
+                t.startsWith("- ") -> points.add(t.removePrefix("- ").trim())
+                t.isNotEmpty() && points.isNotEmpty() && l.startsWith("  ") -> points[points.lastIndex] = points.last() + " " + t
+            }
+        }
+        return headline.take(90) to points.take(4).map { if (it.length > 120) it.take(117).trimEnd() + "…" else it }
     }
 
     /** Downloads [info] into [dir], reporting progress from 0 to 1. Returns the APK file. */

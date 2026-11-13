@@ -649,11 +649,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     // Updates
+    /** The update card on screen (null when it isn't). */
     var update by mutableStateOf<UpdateInfo?>(null)
+        private set
+    /** A newer version, found but not being offered right now (snoozed): Settings shows it. */
+    var updateAvailable by mutableStateOf<UpdateInfo?>(null)
         private set
     var updateProgress by mutableStateOf<Float?>(null)
         private set
     private var checkedForUpdates = false
+    private var updateCheckedAt = 0L
 
     // ---- Profiles ----
 
@@ -2206,6 +2211,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Coming back to the app: straight to where you were, never the screensaver. */
     fun appResumed() {
         syncProgressWithTvs()
+        maybeCheckForUpdates()
         screensaver = false
         screensaverTarget = null
         lastActivity = android.os.SystemClock.uptimeMillis()
@@ -2324,17 +2330,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Updates ----
 
     fun checkForUpdates(manual: Boolean) {
+        // Already found one: Settings opens its card straight away.
+        if (manual && updateAvailable != null) {
+            update = updateAvailable
+            return
+        }
+        updateCheckedAt = android.os.SystemClock.elapsedRealtime()
         viewModelScope.launch {
             val latest = Updates.latest(app.embertv.BuildConfig.UPDATE_REPO)
             when {
                 latest == null -> if (manual) notify("Couldn't check for updates")
-                latest.versionCode > app.embertv.BuildConfig.VERSION_CODE -> update = latest
+                latest.versionCode > app.embertv.BuildConfig.VERSION_CODE -> {
+                    updateAvailable = latest
+                    // "Not now" on this version holds it back for a day, unless asked for in Settings.
+                    val snoozed = prefs.updateSnoozedCode == latest.versionCode && System.currentTimeMillis() < prefs.updateSnoozedUntil
+                    if (manual || !snoozed) update = latest
+                }
                 manual -> notify("You're up to date (version ${app.embertv.BuildConfig.VERSION_NAME})")
             }
         }
     }
 
+    /** Looks again when it's been a while: a Fire Stick can leave the app running for days. */
+    fun maybeCheckForUpdates() {
+        if (repo == null || update != null || updateProgress != null) return
+        if (android.os.SystemClock.elapsedRealtime() - updateCheckedAt < 4 * 3600_000L) return
+        checkForUpdates(manual = false)
+    }
+
+    /** "Not now": that version isn't offered again for a day. Settings still shows it. */
     fun dismissUpdate() {
+        update?.let {
+            prefs.updateSnoozedCode = it.versionCode
+            prefs.updateSnoozedUntil = System.currentTimeMillis() + 24 * 3600_000L
+        }
         update = null
         updateProgress = null
     }
@@ -3262,6 +3291,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             while (true) {
                 kotlinx.coroutines.delay(3 * 60_000L)
                 if (appVisible) syncProgressWithTvs(force = true)
+                if (appVisible) maybeCheckForUpdates()
             }
         }
         // Check for new films and series now and then while the app is on screen.
