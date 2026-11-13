@@ -11,6 +11,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.graphics.graphicsLayer
@@ -119,12 +121,22 @@ fun HomeScreen(vm: AppViewModel) {
         ((vm.tab == Tabs.GUIDE && vm.guideFullScreen) || (vm.tab == Tabs.HOME && vm.homeBarHidden))
     // On Home the menu floats over the picture, which runs right up to the top as on Apple TV.
     val overHome = vm.tab == Tabs.HOME
+    val homeEntry = remember { HomeEntry() }
     val density = androidx.compose.ui.platform.LocalDensity.current
     var barHeightPx by remember { mutableIntStateOf(with(density) { TV_MENU_SPACE.roundToPx() }) }
     val topBar: @Composable () -> Unit = {
         Row(
             // Kept snug so every tab fits on a TV: when it was too wide the Settings icon got squeezed out.
-            Modifier.fillMaxWidth().padding(start = 40.dp, end = 40.dp, top = 22.dp, bottom = 12.dp),
+            Modifier
+                .fillMaxWidth()
+                // Down from the menu on Home goes into the page (see HomeEntry).
+                .onPreviewKeyEvent { ev ->
+                    if (vm.tab == Tabs.HOME && focusedTab >= 0 &&
+                        ev.type == androidx.compose.ui.input.key.KeyEventType.KeyDown &&
+                        ev.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN
+                    ) homeEntry.enter() else false
+                }
+                .padding(start = 40.dp, end = 40.dp, top = 22.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Wordmark()
@@ -152,7 +164,7 @@ fun HomeScreen(vm: AppViewModel) {
                                 focusedTab = -1
                             }
                         },
-                        onClick = { focusManager.moveFocus(FocusDirection.Down) },
+                        onClick = { if (!(vm.tab == Tabs.HOME && homeEntry.enter())) focusManager.moveFocus(FocusDirection.Down) },
                     )
                 }
                 }
@@ -180,7 +192,8 @@ fun HomeScreen(vm: AppViewModel) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (vm.tab) {
                 Tabs.HOME -> androidx.compose.runtime.CompositionLocalProvider(
-                    LocalAmbientArt provides (if (vm.homeArtwork) vm::highlightArt else null)
+                    LocalAmbientArt provides (if (vm.homeArtwork) vm::highlightArt else null),
+                    LocalHomeEntry provides homeEntry,
                 ) { HomeSection(vm) }
                 Tabs.LIVE -> LiveSection(vm)
                 Tabs.GUIDE -> GuideSection(vm)

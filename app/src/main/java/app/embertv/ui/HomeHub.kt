@@ -47,6 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Brush
@@ -622,6 +624,22 @@ private fun BoxScope.HeroDots(count: Int, index: Int, modifier: Modifier = Modif
 /** The height of the menu that floats over the top of Home on a TV. */
 internal val TV_MENU_SPACE = 76.dp
 
+/**
+ * Where Down from the menu goes on Home: the banner's Play button, or else the first thing in the
+ * rows. Needed because Home now runs up behind the menu, and the remote's usual "what's below"
+ * search doesn't count a page that starts above the menu as being below it.
+ */
+class HomeEntry {
+    val hero = androidx.compose.ui.focus.FocusRequester()
+    val list = androidx.compose.ui.focus.FocusRequester()
+
+    fun enter(): Boolean =
+        runCatching { hero.requestFocus(); true }.getOrDefault(false) ||
+            runCatching { list.requestFocus(); true }.getOrDefault(false)
+}
+
+val LocalHomeEntry = androidx.compose.runtime.staticCompositionLocalOf<HomeEntry?> { null }
+
 @Composable
 fun HomeSection(vm: AppViewModel) {
     // Live Sport Now keeps itself up to date while Home is on screen.
@@ -644,10 +662,13 @@ fun HomeSection(vm: AppViewModel) {
         is LoadResult.Err -> Box(Modifier.padding(top = TV_MENU_SPACE)) { ErrorView(f.message) { vm.reload() } }
         is LoadResult.Ok -> {
             val feed = f.value
+            val entry = LocalHomeEntry.current
             LazyColumn(
                 state = homeList,
                 contentPadding = PaddingValues(bottom = 48.dp),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (entry != null) Modifier.focusRequester(entry.list).focusGroup() else Modifier),
             ) {
                 val heroes = featuredFor(vm, feed)
                 if (heroes.isNotEmpty()) {
@@ -728,6 +749,7 @@ private fun TvHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
                         if (resume > 0) "Resume" else "Play",
                         icon = "▶",
                         focusKey = "home:hero:play",
+                        requester = LocalHomeEntry.current?.hero,
                         onClick = { vm.playMovie(movie, fromStart = resume <= 0) },
                     )
                 }
