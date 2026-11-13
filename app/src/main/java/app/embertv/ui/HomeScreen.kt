@@ -136,7 +136,7 @@ fun HomeScreen(vm: AppViewModel) {
                 .fillMaxWidth()
                 // Down from the menu on Home goes into the page (see HomeEntry).
                 .onPreviewKeyEvent { ev ->
-                    if (vm.tab == Tabs.HOME && focusedTab >= 0 &&
+                    if (vm.tab == Tabs.HOME &&
                         ev.type == androidx.compose.ui.input.key.KeyEventType.KeyDown &&
                         ev.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN
                     ) homeEntry.enter() else false

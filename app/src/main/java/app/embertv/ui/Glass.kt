@@ -33,6 +33,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
@@ -140,6 +141,24 @@ fun Modifier.glassSurface(shape: Shape, fill: Color = Color(0x1FFFFFFF)): Modifi
     .background(fill)
     .background(Brush.verticalGradient(listOf(Color(0x1AFFFFFF), Color.Transparent)))
     .border(0.6.dp, Color(0x33FFFFFF), shape)
+
+/**
+ * Apple's Liquid Glass, as far as a Fire Stick can go: a smoky glass slab with a soft sheen running
+ * corner to corner, light catching the top edge, a bright rim that fades round the sides, and a deep
+ * shadow so it floats. (True see-through blur isn't possible on Fire TV, so the glass is tinted
+ * enough that nothing behind shows through.)
+ */
+fun Modifier.liquidGlass(shape: Shape, tint: Color = Color(0xEB1B1B21)): Modifier = this
+    .shadow(30.dp, shape, ambientColor = Color.Black, spotColor = Color.Black)
+    .clip(shape)
+    .background(tint)
+    .background(Brush.linearGradient(0f to Color(0x2BFFFFFF), 0.42f to Color(0x08FFFFFF), 0.75f to Color(0x03FFFFFF), 1f to Color(0x12FFFFFF)))
+    .background(Brush.verticalGradient(0f to Color(0x1AFFFFFF), 0.16f to Color.Transparent))
+    .border(
+        1.2.dp,
+        Brush.linearGradient(0f to Color(0x8CFFFFFF), 0.3f to Color(0x1FFFFFFF), 0.7f to Color(0x0FFFFFFF), 1f to Color(0x4DFFFFFF)),
+        shape,
+    )
 
 // ---------------- Dialogs ----------------
 

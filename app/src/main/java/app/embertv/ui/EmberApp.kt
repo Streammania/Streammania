@@ -413,10 +413,8 @@ private fun UpdateDialog(vm: AppViewModel) {
             Row(
                 Modifier
                     .width(840.dp)
-                    .clip(RoundedCornerShape(32.dp))
-                    .background(Color(0xF7151519))
-                    .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(32.dp))
-                    .padding(horizontal = 34.dp, vertical = 30.dp)
+                    .liquidGlass(RoundedCornerShape(36.dp))
+                    .padding(horizontal = 36.dp, vertical = 32.dp)
                     .height(androidx.compose.foundation.layout.IntrinsicSize.Min),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -452,8 +450,7 @@ private fun UpdateDialog(vm: AppViewModel) {
             Column(
                 Modifier
                     .width(if (isTv) 480.dp else 440.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(dialogPanelColor())
+                    .liquidGlass(RoundedCornerShape(if (isTv) 36.dp else 30.dp))
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = if (isTv) 24.dp else 22.dp, vertical = if (isTv) 18.dp else 22.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -502,7 +499,7 @@ private fun UpdateNotes(info: app.embertv.data.UpdateInfo, solid: Boolean, lines
     Column(
         Modifier
             .fillMaxWidth()
-            .glassSurface(RoundedCornerShape(18.dp), if (solid) Color(0xF01C1C21) else Color(0x12FFFFFF))
+            .glassSurface(RoundedCornerShape(18.dp), Color(0x0FFFFFFF))
             .padding(horizontal = 18.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -532,6 +529,28 @@ private fun UpdateFootnote(info: app.embertv.data.UpdateInfo, modifier: Modifier
     }
 }
 
+@Composable
+private fun UpdatePill(label: String, key: String, autoFocus: Boolean, onClick: () -> Unit) {
+    FocusBox(
+        modifier = Modifier.fillMaxWidth().height(54.dp),
+        focusKey = key,
+        shape = RoundedCornerShape(27.dp),
+        focusedScale = 1.05f,
+        color = Color(0x1FFFFFFF),
+        focusedColor = Color.White,
+        autoFocus = autoFocus,
+        onClick = onClick,
+    ) { focused ->
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                label,
+                style = Txt.Label.copy(fontSize = 17.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                color = if (focused) Color.Black else Ember.Text,
+            )
+        }
+    }
+}
+
 /** Install now (white) and Not now; while downloading, a progress bar in their place. */
 @Composable
 private fun UpdateButtons(vm: AppViewModel, progress: Float?, modifier: Modifier) {
@@ -556,9 +575,10 @@ private fun UpdateButtons(vm: AppViewModel, progress: Float?, modifier: Modifier
             }
         }
     } else {
-        Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            SheetOption("Install now", focusKey = "update:install", autoFocus = true, primary = true) { vm.installUpdate() }
-            SheetOption("Not now", focusKey = "update:later") { vm.dismissUpdate() }
+        // Glass pills that light up white, like the buttons on an Apple TV alert.
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            UpdatePill("Install now", "update:install", autoFocus = true) { vm.installUpdate() }
+            UpdatePill("Not now", "update:later", autoFocus = false) { vm.dismissUpdate() }
         }
     }
 }

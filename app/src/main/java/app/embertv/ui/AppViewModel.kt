@@ -2330,15 +2330,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Updates ----
 
     fun checkForUpdates(manual: Boolean) {
-        // Already found one: Settings opens its card straight away.
-        if (manual && updateAvailable != null) {
-            update = updateAvailable
-            return
-        }
         updateCheckedAt = android.os.SystemClock.elapsedRealtime()
         viewModelScope.launch {
             val latest = Updates.latest(app.embertv.BuildConfig.UPDATE_REPO)
             when {
+                // Couldn't look just now, but one was found earlier: offer that.
+                latest == null && manual && updateAvailable != null -> update = updateAvailable
                 latest == null -> if (manual) notify("Couldn't check for updates")
                 latest.versionCode > app.embertv.BuildConfig.VERSION_CODE -> {
                     updateAvailable = latest
