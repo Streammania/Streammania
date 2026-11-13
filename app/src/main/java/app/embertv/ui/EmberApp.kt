@@ -25,11 +25,14 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -117,11 +120,16 @@ fun EmberApp(vm: AppViewModel, isTv: Boolean) {
                 // Sleep timer
                 val sleepAt = vm.sleepAt
                 LaunchedEffect(sleepAt) {
+                    vm.sleepWarning = false
                     if (sleepAt != null) {
+                        // A minute before: ask if anyone's still watching.
+                        delay((sleepAt - 60_000L - System.currentTimeMillis()).coerceAtLeast(0L))
+                        if (vm.playerOpen && sleepAt - System.currentTimeMillis() > 5_000L) vm.sleepWarning = true
                         delay((sleepAt - System.currentTimeMillis()).coerceAtLeast(0L))
                         vm.sleepNow()
                     }
                 }
+                if (vm.sleepWarning && sleepAt != null) SleepWarningDialog(vm, sleepAt)
 
                 if (vm.update != null && vm.repo != null) UpdateDialog(vm)
                 vm.crashNote?.let { CrashDialog(it) { vm.crashNote = null } }
@@ -239,6 +247,44 @@ private fun ReminderDialog(vm: AppViewModel, r: app.embertv.data.Reminder) {
             Column(Modifier.width(if (isTv) 340.dp else 400.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SheetOption("Watch now", focusKey = "reminder:watch", autoFocus = isTv, primary = true) { vm.watchReminder(r) }
                 SheetOption("Dismiss", focusKey = "reminder:dismiss") { vm.dismissReminder() }
+            }
+        }
+    }
+}
+
+/** The sleep timer's last minute: keep watching, or let it stop. Doing nothing lets it stop. */
+@Composable
+private fun SleepWarningDialog(vm: AppViewModel, sleepAt: Long) {
+    val isTv = LocalIsTv.current
+    var left by remember { mutableStateOf(((sleepAt - System.currentTimeMillis()) / 1000).coerceAtLeast(0)) }
+    LaunchedEffect(sleepAt) {
+        while (true) {
+            left = ((sleepAt - System.currentTimeMillis()) / 1000).coerceAtLeast(0)
+            delay(1_000)
+        }
+    }
+    Dialog(onDismissRequest = { vm.keepWatching(30) }) {
+        DialogBackdropBlur()
+        Column(
+            Modifier
+                .width(if (isTv) 480.dp else 420.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(dialogPanelColor())
+                .padding(if (isTv) 8.dp else 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(EmberIcons.Moon, contentDescription = null, tint = Ember.Text, modifier = Modifier.size(40.dp))
+            Spacer(Modifier.height(14.dp))
+            SheetTitle(
+                "Still watching?",
+                eyebrow = "Sleep timer",
+                subtitle = "Stopping in $left seconds",
+            )
+            Spacer(Modifier.height(22.dp))
+            Column(Modifier.width(if (isTv) 340.dp else 380.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SheetOption("Keep watching", focusKey = "sleep:keep", autoFocus = isTv, primary = true, subtitle = "30 more minutes") { vm.keepWatching(30) }
+                SheetOption("Turn the timer off", focusKey = "sleep:off") { vm.sleepOff() }
+                SheetOption("Stop now", focusKey = "sleep:stop") { vm.sleepNow() }
             }
         }
     }

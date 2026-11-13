@@ -837,6 +837,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         matchReminders = prefs.matchReminders
         homeArtwork = prefs.homeArtwork
         homeArt = null
+        recentSearches = prefs.recentSearches
         dueKickoff = null
         homeExtras = null
         applyCategoryFilter()
@@ -1370,6 +1371,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         movieSort = prefs.movieSort
         seriesSort = prefs.seriesSort
         rememberChannelQuality = prefs.rememberChannelQuality
+        autoRescue = prefs.autoRescue
         timeshiftOn = prefs.timeshiftMinutes > 0
         startOn = prefs.startOn
         sportOnHome = prefs.sportOnHome
@@ -1658,6 +1660,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     val textSizeLabel: String
         get() = TEXT_SIZES.firstOrNull { kotlin.math.abs(it.second - Txt.scale) < 0.01f }?.first ?: "Normal"
+
+    // ---- Recent searches ----
+
+    var recentSearches by mutableStateOf(prefs.recentSearches)
+        private set
+
+    /** Remembers a search that found something, newest first, without repeats. */
+    fun noteSearch(query: String) {
+        val q = query.trim()
+        if (q.length < 2 || recentSearches.firstOrNull().equals(q, ignoreCase = true)) return
+        recentSearches = (listOf(q) + recentSearches.filterNot { it.equals(q, ignoreCase = true) }).take(8)
+        prefs.recentSearches = recentSearches
+    }
+
+    fun clearRecentSearches() {
+        recentSearches = emptyList()
+        prefs.recentSearches = recentSearches
+    }
+
+    // ---- A stalling channel switches to another copy ----
+
+    var autoRescue by mutableStateOf(prefs.autoRescue)
+        private set
+
+    fun toggleAutoRescue() {
+        autoRescue = !autoRescue
+        prefs.autoRescue = autoRescue
+    }
 
     // ---- Artwork behind Home ----
 
@@ -1971,6 +2001,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (stack.size <= 1) return
         val wasVod = stack.last() is Screen.PlayVod
         stack.removeAt(stack.lastIndex)
+        // "Stop after this episode" was for the one that was playing.
+        if (wasVod) sleepAfterThis = false
         // Give the player a moment to save where it stopped, then share it with the TV.
         if (wasVod) viewModelScope.launch { kotlinx.coroutines.delay(1_500); syncProgressWithTvs(force = true) }
         restoreClaimed = false
@@ -2228,8 +2260,50 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun cycleSleepTimer() {
         val remaining = sleepAt?.let { ((it - System.currentTimeMillis()) / 60_000L).toInt() } ?: 0
         val next = sleepSteps.firstOrNull { it > remaining + 1 } ?: 0
+        sleepAfterThis = false
         sleepAt = if (next == 0) null else System.currentTimeMillis() + next * 60_000L
         notify(if (next == 0) "Sleep timer off" else "Sleep timer: $next minutes")
+    }
+
+    /** Stops when the programme on now ends (live TV). */
+    fun sleepAtTime(ms: Long) {
+        sleepAfterThis = false
+        sleepAt = ms
+        notify("Sleep timer: stops at ${formatClock(ms / 1000)}")
+    }
+
+    /** Stops when the film or episode playing now ends, instead of moving on to the next one. */
+    var sleepAfterThis by mutableStateOf(false)
+        private set
+
+    fun toggleSleepAfterThis() {
+        sleepAfterThis = !sleepAfterThis
+        if (sleepAfterThis) sleepAt = null
+        notify(if (sleepAfterThis) "Sleep timer: stops when this ends" else "Sleep timer off")
+    }
+
+    /** The player reached the end with [sleepAfterThis] on. True if it should stop here. */
+    fun takeSleepAfterThis(): Boolean {
+        if (!sleepAfterThis) return false
+        sleepAfterThis = false
+        notify("Sleep timer: playback stopped")
+        return true
+    }
+
+    /** The last minute of the timer: a card asks whether you're still watching. */
+    var sleepWarning by mutableStateOf(false)
+
+    fun keepWatching(minutes: Int) {
+        sleepWarning = false
+        sleepAt = System.currentTimeMillis() + minutes * 60_000L
+        notify("Sleep timer: $minutes more minutes")
+    }
+
+    fun sleepOff() {
+        sleepWarning = false
+        sleepAt = null
+        sleepAfterThis = false
+        notify("Sleep timer off")
     }
 
     fun sleepMinutesLeft(now: Long = System.currentTimeMillis()): Int? =
@@ -2238,6 +2312,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Called when the sleep timer runs out: stop anything that's playing. */
     fun sleepNow() {
         sleepAt = null
+        sleepWarning = false
         var stopped = false
         while (stack.size > 1 && (stack.last() is Screen.PlayLive || stack.last() is Screen.PlayVod)) {
             pop()

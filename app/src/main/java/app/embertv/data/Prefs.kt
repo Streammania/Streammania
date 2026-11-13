@@ -164,7 +164,7 @@ class Prefs(context: Context) {
         val e = sp.edit()
         for (key in sp.all.keys) {
             val belongs = if (id == MAIN_PROFILE) {
-                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next", "kickoff_reminders", "finished_at", "match_reminders", "home_artwork") ||
+                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next", "kickoff_reminders", "finished_at", "match_reminders", "home_artwork", "recent_searches") ||
                     key.startsWith("pos_") || key.startsWith("last_ep_")
             } else {
                 key.startsWith("p_${id}_")
@@ -602,6 +602,25 @@ class Prefs(context: Context) {
     fun clearChannelQualities() {
         sp.edit().remove(pk("channel_quality")).apply()
     }
+
+    /** The last few things searched for, newest first. */
+    var recentSearches: List<String>
+        get() = runCatching {
+            val a = JSONArray(sp.getString(pk("recent_searches"), "[]") ?: "[]")
+            (0 until a.length()).map { a.optString(it) }.filter { it.isNotBlank() }
+        }.getOrDefault(emptyList())
+        set(value) {
+            val a = JSONArray()
+            value.take(8).forEach { a.put(it) }
+            sp.edit().putString(pk("recent_searches"), a.toString()).apply()
+        }
+
+    /** Whether a stalling channel switches to another copy of itself by itself. */
+    var autoRescue: Boolean
+        get() = sp.getBoolean("auto_rescue", true)
+        set(value) {
+            sp.edit().putBoolean("auto_rescue", value).apply()
+        }
 
     /** Whether Home's background fades to the highlighted film's or series' artwork (TV). */
     var homeArtwork: Boolean

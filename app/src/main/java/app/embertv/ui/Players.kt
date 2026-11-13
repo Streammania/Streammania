@@ -576,6 +576,27 @@ fun LivePlayerScreen(vm: AppViewModel, channelsIn: List<Channel>, startIndex: In
     val channel = channels[index]
     // The same channel in other qualities (FHD, HD, SD), for the ••• panel.
     val copies by produceState(emptyList<Channel>(), channel.streamId) { value = vm.channelCopies(channel) }
+    // Rescue: when this copy stalls or won't play, move to another copy of the same channel.
+    // Everything it reads is live state, because the player's listener holds on to it.
+    val copiesNow by androidx.compose.runtime.rememberUpdatedState(copies)
+    val rescueTried = remember { HashSet<Int>() }
+    fun rescue(why: String): Boolean {
+        if (!vm.autoRescue || shiftStart != null || paused) return false
+        val current = channels[index]
+        rescueTried.add(current.streamId)
+        val all = copiesNow
+        val at = all.indexOfFirst { it.streamId == current.streamId }
+        // The next quality down first, then round to the higher ones.
+        val order = if (at >= 0) all.drop(at + 1) + all.take(at) else all
+        val next = order.firstOrNull { it.streamId !in rescueTried } ?: return false
+        channels[index] = next
+        alternate = false
+        retries = 0
+        error = null
+        restart++
+        vm.notify("${channelParts(current.name).first} $why, so switched to ${channelParts(next.name).second ?: "another copy"}")
+        return true
+    }
     // Live TV keeps the screen's own refresh rate (switching blanked the picture on every channel change).
     val videoStats = rememberVideoStats(exo, channel.streamId)
     HdrGuard(exo, channel.streamId)
@@ -594,6 +615,7 @@ fun LivePlayerScreen(vm: AppViewModel, channelsIn: List<Channel>, startIndex: In
         alternate = false
         retries = 0
         error = null
+        rescueTried.clear()
         showOverlay()
     }
 
@@ -721,6 +743,13 @@ fun LivePlayerScreen(vm: AppViewModel, channelsIn: List<Channel>, startIndex: In
         overlayVisible = false
     }
 
+    // Stuck buffering: give it a few seconds (longer when a channel is first starting), then rescue.
+    LaunchedEffect(buffering, index, restart, paused) {
+        if (!buffering || paused || shiftStart != null || error != null) return@LaunchedEffect
+        delay(if (exo.currentPosition < 1_000) 12_000 else 8_000)
+        rescue("kept stalling")
+    }
+
     // Debounced so holding up/down flicks through channels without starting every stream.
     LaunchedEffect(index, alternate, restart) {
         if (!firstLoad) delay(350)
@@ -766,7 +795,7 @@ fun LivePlayerScreen(vm: AppViewModel, channelsIn: List<Channel>, startIndex: In
                         alternate = true
                         retries = 0
                     }
-                    else -> error = describe(e)
+                    else -> if (!rescue("wouldn't play")) error = describe(e)
                 }
             }
 
@@ -1695,6 +1724,12 @@ private fun BoxScope.LiveOptionsPanel(
         SheetSection("More")
         val left = vm.sleepMinutesLeft()
         ZapAction(EmberIcons.Moon, "Sleep timer", if (left == null) "Off" else "$left min") { vm.cycleSleepTimer() }
+        // Stop when what's on now finishes, if the guide knows when that is.
+        val nowSecs = LocalNow.current
+        val onNow = vm.repo?.let { rememberProgrammes(it, channel.streamId) }?.firstOrNull { it.start <= nowSecs && it.end > nowSecs }
+        if (onNow != null) {
+            ZapAction(EmberIcons.Moon, "Stop after this programme", formatClock(onNow.end)) { vm.sleepAtTime(onNow.end * 1000) }
+        }
         ZapAction(EmberIcons.OpenExternal, "Open in another player", "") {
             onDismiss()
             onOpenElsewhere()
@@ -1864,6 +1899,7 @@ fun VodPlayerScreen(vm: AppViewModel, items: List<VodItem>, startIndex: Int, sta
                         vm.saveProgress(it, 0L, 0L)
                         vm.markFinished(it)
                     }
+                    vm.takeSleepAfterThis()
                     vm.pop()
                 }
             }
@@ -1878,6 +1914,12 @@ fun VodPlayerScreen(vm: AppViewModel, items: List<VodItem>, startIndex: Int, sta
                     items.getOrNull(previous)?.let {
                         vm.saveProgress(it, 0L, 0L)
                         vm.markFinished(it)
+                    }
+                    // Sleep timer set to this episode: stop here; the next one waits in Up Next.
+                    if (vm.takeSleepAfterThis()) {
+                        exo.pause()
+                        vm.pop()
+                        return
                     }
                 }
                 items.getOrNull(current)?.let { vm.saveProgress(it, 0L, 0L) }
@@ -1975,7 +2017,7 @@ fun VodPlayerScreen(vm: AppViewModel, items: List<VodItem>, startIndex: Int, sta
     val hasNextItem = current < items.lastIndex
     val remainingMs = duration - position
     val atEnd = duration > 0 && remainingMs <= 1_200 && !playing
-    val counting = vm.autoplayNext && !upNextCancelled && playing && remainingMs in 1..UP_NEXT_MS
+    val counting = vm.autoplayNext && !vm.sleepAfterThis && !upNextCancelled && playing && remainingMs in 1..UP_NEXT_MS
     val upNext = hasNextItem && duration > 120_000 && error == null && !vm.inPip && (counting || atEnd)
     BackHandler(enabled = upNext && counting) { upNextCancelled = true }
 
@@ -2855,6 +2897,11 @@ private fun BoxScope.TrackPanel(
             SheetSection("Sleep timer")
             val left = vm.sleepMinutesLeft()
             ZapAction(EmberIcons.Moon, if (left == null) "Off" else "Stops in $left min", "Change") { vm.cycleSleepTimer() }
+            ZapAction(
+                EmberIcons.Moon,
+                if (item?.seriesId != null) "Stop after this episode" else "Stop when this ends",
+                if (vm.sleepAfterThis) "On" else "Off",
+            ) { vm.toggleSleepAfterThis() }
             Spacer(Modifier.height(18.dp))
             SheetSection("Won't play properly?")
             ZapAction(EmberIcons.OpenExternal, "Open in another player", "") {

@@ -259,6 +259,37 @@ private fun SeriesShelf(vm: AppViewModel, title: String, series: List<Series>, k
 
 // ---------------- Search ----------------
 
+/** Under an empty search box: the last few searches, one press to run again. */
+@Composable
+private fun RecentSearches(vm: AppViewModel) {
+    Column(Modifier.padding(horizontal = edgePadding()).widthIn(max = 680.dp)) {
+        Spacer(Modifier.height(6.dp))
+        SheetSection("Recent searches")
+        Spacer(Modifier.height(4.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (q in vm.recentSearches) {
+                FocusBox(
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    focusKey = "search:recent:$q",
+                    shape = RoundedCornerShape(14.dp),
+                    focusedScale = 1.02f,
+                    color = Color(0x12FFFFFF),
+                    focusedColor = Color.White,
+                    onClick = { vm.searchQuery = q },
+                ) { focused ->
+                    Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(EmberIcons.Search, contentDescription = null, tint = if (focused) Color.Black else Ember.Dim, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text(q, style = Txt.Body, color = if (focused) Color.Black else Ember.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            GlassButton("Clear recent searches", EmberIcons.Close) { vm.clearRecentSearches() }
+        }
+    }
+}
+
 @Composable
 fun SearchSection(vm: AppViewModel) {
     val repo = vm.repo ?: return
@@ -361,7 +392,15 @@ fun SearchSection(vm: AppViewModel) {
         val sr = series
         val stillLooking = ch == null || mv == null || sr == null
         val anything = !ch.isNullOrEmpty() || !mv.isNullOrEmpty() || !sr.isNullOrEmpty() || onTv.isNotEmpty() || onTvProgress != null
+        // A search that found something is remembered, once it's been on screen a moment.
+        LaunchedEffect(query, anything && !stillLooking) {
+            if (query.length >= 2 && anything && !stillLooking) {
+                delay(2_000)
+                vm.noteSearch(query)
+            }
+        }
         when {
+            query.length < 2 && vm.recentSearches.isNotEmpty() -> RecentSearches(vm)
             query.length < 2 -> EmptyView(
                 if (ready.size < 3) "Getting your channels, films and series ready to search… You can start typing."
                 else "Press OK on the search box and type at least two letters to search everything your provider offers, including what's on TV this week."
@@ -727,6 +766,13 @@ fun SettingsSection(vm: AppViewModel) {
                             focusKey = "set:rememberquality",
                         ) { vm.toggleRememberChannelQuality() }
                     }
+
+                    SettingRow(
+                        "Rescue stalling channels",
+                        if (vm.autoRescue) "On" else "Off",
+                        "If a channel freezes or won't start, switch to another quality of it by itself",
+                        focusKey = "set:rescue",
+                    ) { vm.toggleAutoRescue() }
 
                     SettingRow(
                         if (isTv) "Channel up / down" else "Channel swipe",
