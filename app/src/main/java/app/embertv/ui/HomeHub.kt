@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -653,7 +654,13 @@ fun HomeSection(vm: AppViewModel) {
     if (arranging) ArrangeHomeDialog(vm) { arranging = false }
     // Apple TV style: the top bar tucks away once you're browsing the rows below the banner.
     val homeList = vm.home.list("tv")
-    val scrolledDown by remember { androidx.compose.runtime.derivedStateOf { homeList.firstVisibleItemIndex > 0 } }
+    // Even a little way down counts: the menu floats over the banner, so it steps aside as soon as
+    // the page moves rather than sitting on top of the film's title.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val nudge = with(density) { 16.dp.roundToPx() }
+    val scrolledDown by remember {
+        androidx.compose.runtime.derivedStateOf { homeList.firstVisibleItemIndex > 0 || homeList.firstVisibleItemScrollOffset > nudge }
+    }
     LaunchedEffect(scrolledDown) { vm.homeBarHidden = scrolledDown }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { vm.homeBarHidden = false } }
     when (val f = feedState) {
@@ -685,6 +692,7 @@ fun HomeSection(vm: AppViewModel) {
 @Composable
 private fun TvHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
     var focused by remember { mutableStateOf(false) }
+    val heroScope = androidx.compose.runtime.rememberCoroutineScope()
     val (index, setIndex) = rememberHeroIndex(heroes.size, paused = focused)
     val movie = heroes[index]
     val info = (rememberLoad(movie.streamId) { repo.movieInfo(movie.streamId) }.value as? LoadResult.Ok)?.value
@@ -732,7 +740,11 @@ private fun TvHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
             Spacer(Modifier.height(18.dp))
             Row(
                 Modifier
-                    .onFocusChanged { focused = it.hasFocus }
+                    .onFocusChanged {
+                        focused = it.hasFocus
+                        // Back on the banner: the page slides back to the top, as on Apple TV.
+                        if (it.hasFocus) heroScope.launch { runCatching { vm.home.list("tv").animateScrollToItem(0) } }
+                    }
                     .onPreviewKeyEvent { ev ->
                         if (ev.type != androidx.compose.ui.input.key.KeyEventType.KeyDown || heroes.size <= 1) return@onPreviewKeyEvent false
                         when (ev.nativeKeyEvent.keyCode) {

@@ -72,7 +72,12 @@ fun HomeScreen(vm: AppViewModel) {
     // Back from the content jumps up to the tab bar; back from the tab bar leaves the app.
     // Shows the bar again for a moment so Back can move up to it.
     var reveal by remember { mutableStateOf(false) }
-    LaunchedEffect(focusedTab) { if (focusedTab >= 0) reveal = false }
+    LaunchedEffect(focusedTab) {
+        if (focusedTab >= 0) reveal = false
+        // Up on the menu over Home: the page goes back to the top so the menu never sits on the
+        // banner's words.
+        if (focusedTab == Tabs.HOME) runCatching { vm.home.list("tv").animateScrollToItem(0) }
+    }
     // "See all" on Home switched tab: move the highlight there too.
     LaunchedEffect(vm.tabJump) {
         if (vm.tabJump == 0) return@LaunchedEffect
