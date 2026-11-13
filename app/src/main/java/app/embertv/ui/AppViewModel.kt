@@ -1058,12 +1058,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 Unit
             }
 
-            override suspend fun syncProgress(o: org.json.JSONObject): org.json.JSONObject =
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+            override suspend fun syncProgress(o: org.json.JSONObject): org.json.JSONObject {
+                val out = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     prefs.mergeProgress(o)
-                    reloadProgress()
                     prefs.exportProgress()
                 }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { reloadProgress() }
+                return out
+            }
         })
         tvLink = server
         tvLinkJob = viewModelScope.launch {
@@ -1318,8 +1320,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun syncProgressNow(p: PairedTv): Boolean {
-        val merged = TvLinkClient.syncProgress(p.tv, p.token, prefs.exportProgress()) ?: return false
-        prefs.mergeProgress(merged)
+        // Reading and writing the saved progress happens off the main thread, so a sync in the
+        // background never makes the picture or the remote stutter.
+        val io = kotlinx.coroutines.Dispatchers.IO
+        val mine = kotlinx.coroutines.withContext(io) { prefs.exportProgress() }
+        val merged = TvLinkClient.syncProgress(p.tv, p.token, mine) ?: return false
+        kotlinx.coroutines.withContext(io) { prefs.mergeProgress(merged) }
         reloadProgress()
         return true
     }
