@@ -141,21 +141,27 @@ fun Modifier.glassSurface(shape: Shape, fill: Color = Color(0x1FFFFFFF)): Modifi
     .background(fill)
     // Liquid Glass: a sheen running corner to corner, light along the top, and a rim that's
     // brightest where the light catches it (top left) and fades round the sides.
-    .background(GlassSheen)
-    .background(GlassTopLight)
-    .border(0.8.dp, GlassRim, shape)
+    .background(glassSheen())
+    .background(glassTopLight())
+    .border(0.8.dp, glassRim(), shape)
+
+/*
+ * The glass brushes are made fresh for each surface rather than shared. A gradient brush keeps the
+ * shader it made for one size only, so one brush shared by tiles of different sizes had to rebuild
+ * its shader on every draw — lots of throwaway work while scrolling, which showed up as stutters.
+ */
 
 /** The sheen across a glass surface, top left to bottom right. */
-val GlassSheen = Brush.linearGradient(0f to Color(0x17FFFFFF), 0.45f to Color(0x05FFFFFF), 0.8f to Color.Transparent, 1f to Color(0x0AFFFFFF))
+fun glassSheen(): Brush = Brush.linearGradient(0f to Color(0x17FFFFFF), 0.45f to Color(0x05FFFFFF), 0.8f to Color.Transparent, 1f to Color(0x0AFFFFFF))
 
 /** Light along a glass surface's top edge. */
-val GlassTopLight = Brush.verticalGradient(0f to Color(0x17FFFFFF), 0.22f to Color.Transparent)
+fun glassTopLight(): Brush = Brush.verticalGradient(0f to Color(0x17FFFFFF), 0.22f to Color.Transparent)
 
 /** A glass edge: bright where the light catches it, fading round the sides, a little light again bottom right. */
-val GlassRim = Brush.linearGradient(0f to Color(0x66FFFFFF), 0.3f to Color(0x1FFFFFFF), 0.7f to Color(0x0FFFFFFF), 1f to Color(0x38FFFFFF))
+fun glassRim(): Brush = Brush.linearGradient(0f to Color(0x66FFFFFF), 0.3f to Color(0x1FFFFFFF), 0.7f to Color(0x0FFFFFFF), 1f to Color(0x38FFFFFF))
 
 /** The same edge, softer, for tiles and buttons that sit in rows. */
-val GlassRimSoft = Brush.linearGradient(0f to Color(0x47FFFFFF), 0.35f to Color(0x14FFFFFF), 0.7f to Color(0x0AFFFFFF), 1f to Color(0x24FFFFFF))
+fun glassRimSoft(): Brush = Brush.linearGradient(0f to Color(0x47FFFFFF), 0.35f to Color(0x14FFFFFF), 0.7f to Color(0x0AFFFFFF), 1f to Color(0x24FFFFFF))
 
 /**
  * Apple's Liquid Glass, as far as a Fire Stick can go: a smoky glass slab with a soft sheen running
@@ -167,12 +173,9 @@ fun Modifier.liquidGlass(shape: Shape, tint: Color = Color(0xEB1B1B21)): Modifie
     .shadow(30.dp, shape, ambientColor = Color.Black, spotColor = Color.Black)
     .clip(shape)
     .background(tint)
-    .background(SlabSheen)
-    .background(GlassTopLight)
-    .border(1.2.dp, SlabRim, shape)
-
-private val SlabSheen = Brush.linearGradient(0f to Color(0x2BFFFFFF), 0.42f to Color(0x08FFFFFF), 0.75f to Color(0x03FFFFFF), 1f to Color(0x12FFFFFF))
-private val SlabRim = Brush.linearGradient(0f to Color(0x8CFFFFFF), 0.3f to Color(0x1FFFFFFF), 0.7f to Color(0x0FFFFFFF), 1f to Color(0x4DFFFFFF))
+    .background(Brush.linearGradient(0f to Color(0x2BFFFFFF), 0.42f to Color(0x08FFFFFF), 0.75f to Color(0x03FFFFFF), 1f to Color(0x12FFFFFF)))
+    .background(glassTopLight())
+    .border(1.2.dp, Brush.linearGradient(0f to Color(0x8CFFFFFF), 0.3f to Color(0x1FFFFFFF), 0.7f to Color(0x0FFFFFFF), 1f to Color(0x4DFFFFFF)), shape)
 
 // ---------------- Dialogs ----------------
 

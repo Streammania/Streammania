@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -250,8 +251,15 @@ fun FocusBox(
     val ownRequester = remember { FocusRequester() }
     val requester = requester ?: ownRequester
 
-    // Phones have no focus highlight to return to, so only TVs restore it.
-    val shouldRestore = LocalIsTv.current && focusKey != null && vm.restoreFocusKey == focusKey
+    // This tile's own glass brushes (see glassSheen).
+    val sheen = remember { glassSheen() }
+    val rim = remember { glassRimSoft() }
+
+    // Phones have no focus highlight to return to, so only TVs restore it. Each tile only wakes up
+    // when the remembered key becomes (or stops being) its own, not every time it changes: before,
+    // every tile on screen redrew twice on each trip back from another page.
+    val restoreMine = remember(focusKey) { derivedStateOf { focusKey != null && vm.restoreFocusKey == focusKey } }
+    val shouldRestore = LocalIsTv.current && restoreMine.value
     if (shouldRestore) {
         LaunchedEffect(Unit) {
             delay(60)
@@ -291,8 +299,8 @@ fun FocusBox(
             .then(
                 if (glassEdge && !focused && color.alpha > 0f && color.alpha < 0.5f) {
                     Modifier
-                        .background(GlassSheen)
-                        .border(0.8.dp, GlassRimSoft, shape)
+                        .background(sheen)
+                        .border(0.8.dp, rim, shape)
                 } else {
                     Modifier
                 }

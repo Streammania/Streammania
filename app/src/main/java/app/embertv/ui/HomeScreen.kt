@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Column
@@ -183,7 +184,7 @@ fun HomeScreen(vm: AppViewModel) {
     // The same soft warm glow at the top of every page, like the guide.
     Box(Modifier.fillMaxSize().background(Ember.Bg)) {
     // Home's background fades to the highlighted film's or series' artwork, as on Apple TV.
-    HomeAmbientArt(if (vm.tab == Tabs.HOME && vm.homeArtwork) vm.homeArt else null)
+    HomeAmbientArt(vm)
     Column(
         Modifier
             .fillMaxSize()
@@ -191,8 +192,13 @@ fun HomeScreen(vm: AppViewModel) {
     ) {
         // Other pages start below the menu; Home runs up behind it. (The menu itself is drawn once,
         // over everything, so moving between tabs never rebuilds it and loses your place.)
-        AnimatedVisibility(visible = !hideBar && !overHome, enter = expandVertically(), exit = shrinkVertically()) {
-            Spacer(Modifier.fillMaxWidth().height(with(density) { barHeightPx.toDp() }))
+        // Switching between Home and another tab adds or removes this room at once: animating it
+        // made the whole new page lay itself out again on every frame of the slide, which was the
+        // slowness moving between tabs. It still slides when the guide goes full screen.
+        if (!overHome) {
+            AnimatedVisibility(visible = !hideBar, enter = expandVertically(), exit = shrinkVertically()) {
+                Spacer(Modifier.fillMaxWidth().height(with(density) { barHeightPx.toDp() }))
+            }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (vm.tab) {
@@ -212,17 +218,24 @@ fun HomeScreen(vm: AppViewModel) {
     }
     AnimatedVisibility(visible = !hideBar, enter = fadeIn(), exit = fadeOut()) {
         // On Home, a soft shade behind the menu keeps it readable over any picture.
-        val shade by androidx.compose.animation.core.animateFloatAsState(if (overHome) 0.75f else 0f, label = "menuShade")
+        // Read only while drawing, so the fade redraws the shade alone rather than rebuilding
+        // every button in the menu on each frame.
+        val shade = androidx.compose.animation.core.animateFloatAsState(if (overHome) 0.75f else 0f, label = "menuShade")
         Box(
             Modifier
                 .fillMaxWidth()
                 .onSizeChanged { barHeightPx = it.height }
-                .background(
-                    androidx.compose.ui.graphics.Brush.verticalGradient(
-                        0f to Ember.Bg.copy(alpha = shade),
-                        1f to androidx.compose.ui.graphics.Color.Transparent,
-                    )
-                )
+                .drawBehind {
+                    val a = shade.value
+                    if (a > 0.01f) {
+                        drawRect(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                0f to Ember.Bg.copy(alpha = a),
+                                1f to androidx.compose.ui.graphics.Color.Transparent,
+                            )
+                        )
+                    }
+                }
         ) { topBar() }
     }
     }
@@ -234,7 +247,9 @@ fun HomeScreen(vm: AppViewModel) {
  * Sticks can't blur a full-screen picture smoothly), and pictures cross-fade as the highlight moves.
  */
 @Composable
-private fun HomeAmbientArt(url: String?) {
+private fun HomeAmbientArt(vm: AppViewModel) {
+    // Read here, not in the page above, so a new highlight only redraws the background.
+    val url = if (vm.tab == Tabs.HOME && vm.homeArtwork) vm.homeArt else null
     val context = androidx.compose.ui.platform.LocalContext.current
     androidx.compose.animation.Crossfade(targetState = url, animationSpec = androidx.compose.animation.core.tween(700), label = "homeArt") { art ->
         if (art != null) {

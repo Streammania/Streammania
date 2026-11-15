@@ -2824,9 +2824,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (fixtureJob?.isActive == true) return
         fixtureJob = viewModelScope.launch {
             while (fixtureQueue.isNotEmpty()) {
+                // A gentle background job: it waits for a quiet moment and never runs while
+                // something's playing, so it doesn't slow down pages (or the picture) by
+                // competing for the provider's attention.
+                kotlinx.coroutines.delay(2_500)
+                while (playerOpen || !appVisible) kotlinx.coroutines.delay(5_000)
                 val next = fixtureQueue.removeFirst()
                 val hit = try {
-                    app.embertv.data.MatchFinder.find(r, next, nowSeconds(), guideBudget = 10) { _, _, _ -> }
+                    app.embertv.data.MatchFinder.find(r, next, nowSeconds(), guideBudget = 6) { _, _, _ -> }
                         .firstOrNull { it.score >= 8 }
                 } catch (e: CancellationException) {
                     throw e
