@@ -259,7 +259,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (item.seriesId != null) queueNextEpisode(item)
     }
 
-    /** Puts the episode after [item] at the front of Up Next on Home, like Apple TV. */
+    /** Puts the episode after [item] at the front of Continue Watching on Home, like Apple TV. */
     private fun queueNextEpisode(item: VodItem) {
         val sid = item.seriesId ?: return
         val eid = item.episodeId ?: return
@@ -280,7 +280,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 ?: return@launch
             val key = "ep:${next.id}"
             if (key in watchedKeys) return@launch
-            // Already further along in that one? Leave Up Next as it is.
+            // Already further along in that one? Leave Continue Watching as it is.
             if (history.any { it.key == key && it.positionMs > 0 }) return@launch
             val entry = HistoryEntry(
                 key = key,
@@ -1031,7 +1031,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         pairedTvs.removeAll { it.tv.name == other.name }
                         pairedTvs.add(PairedTv(other, back))
                         savePairedTvs()
-                        notify("Linked with ${other.name}. Up Next is now shared")
+                        notify("Linked with ${other.name}. Continue Watching is now shared")
                     } else {
                         notify("${p.first} can now control this TV")
                     }
@@ -1101,7 +1101,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var tvPairingFromTv by mutableStateOf(false)
         private set
 
-    /** On a TV: links with another TV in the house, so Up Next is shared between them. */
+    /** On a TV: links with another TV in the house, so Continue Watching is shared between them. */
     fun linkTv(tv: FoundTv) {
         val me = ownTvName ?: return
         viewModelScope.launch {
@@ -1116,7 +1116,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             var ok = 0
             for (p in tvs) if (syncProgressNow(p)) ok++
-            notify(if (ok > 0) "Up Next is up to date" else "Couldn't reach ${tvs.first().tv.name}. Is Streammania open on it?")
+            notify(if (ok > 0) "Continue Watching is up to date" else "Couldn't reach ${tvs.first().tv.name}. Is Streammania open on it?")
         }
     }
 
@@ -1264,7 +1264,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             pairedTvs.add(p)
             savePairedTvs()
             if (asTv) {
-                notify("Linked with ${tv.name}. Up Next is now shared")
+                notify("Linked with ${tv.name}. Continue Watching is now shared")
                 syncProgressNow(p)
                 return@launch
             }
@@ -1569,7 +1569,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun newEpisodesFor(r: Repository): List<Series> {
-        // Series watched before this was added count from their Up Next entry.
+        // Series watched before this was added count from their Continue Watching entry.
         val seen = HashMap(seriesSeen)
         for (h in history) if (h.type == ContentType.SERIES && h.seriesId > 0 && h.seriesId !in seen) seen[h.seriesId] = h.updatedAt
         if (seen.isEmpty()) return emptyList()
@@ -3288,7 +3288,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         pickingProfile = profiles.size > 1 || start.locked
         val saved = prefs.account
         if (saved != null) startSession(saved, null)
-        // Up Next with linked TVs (and the TV for a phone), every few minutes while on screen.
+        // Continue Watching with linked TVs (and the TV for a phone), every few minutes while on screen.
         viewModelScope.launch {
             while (true) {
                 kotlinx.coroutines.delay(3 * 60_000L)
@@ -3315,7 +3315,7 @@ private const val VOD_UPDATE_EVERY_MS = 3 * 60 * 60_000L
 /** Home's rows that can be moved or turned off, with their names, in their usual order. */
 val HOME_ROWS = listOf(
     "sport" to "Sport (live games and your teams)",
-    "continue" to "Up Next",
+    "continue" to "Continue Watching",
     "coming-up" to "Coming Up on Your Channels",
     "new-episodes" to "New Episodes",
     "recently-added" to "Recently Added",

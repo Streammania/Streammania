@@ -526,7 +526,7 @@ private fun ProfileEditor(vm: AppViewModel, initial: Profile?, onDone: () -> Uni
                 Spacer(Modifier.height(14.dp))
                 SheetTitle(
                     "Delete ${initial.name}?",
-                    subtitle = "Their favourites, Up Next and resume points will be removed from this device.",
+                    subtitle = "Their favourites, Continue Watching and resume points will be removed from this device.",
                 )
                 Spacer(Modifier.height(24.dp))
                 Column(Modifier.width(if (isTv) 340.dp else 400.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

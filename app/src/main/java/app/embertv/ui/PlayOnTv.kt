@@ -49,7 +49,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import app.embertv.data.FoundTv
 
-/** On a TV: other Streammania TVs in the house, linked so Up Next carries on from one to the other. */
+/** On a TV: other Streammania TVs in the house, linked so Continue Watching carries on from one to the other. */
 @Composable
 fun LinkedTvsDialog(vm: AppViewModel, onDismiss: () -> Unit) {
     val linked = vm.pairedTvs.toList()
@@ -72,7 +72,7 @@ fun LinkedTvsDialog(vm: AppViewModel, onDismiss: () -> Unit) {
             Spacer(Modifier.height(14.dp))
             SheetTitle(
                 "Other TVs",
-                eyebrow = "Up Next",
+                eyebrow = "Continue Watching",
                 subtitle = "Link another Fire TV with Streammania open on the same Wi-Fi. Stop a film on one and carry on from the same point on the other.",
             )
             Spacer(Modifier.height(22.dp))
@@ -165,7 +165,7 @@ fun TvPairingDialog(vm: AppViewModel) {
             SheetTitle(
                 if (vm.tvPairingFromTv) "Link with $phone" else "Pair with $phone",
                 eyebrow = if (vm.tvPairingFromTv) "Other TVs" else "Play on TV",
-                subtitle = if (vm.tvPairingFromTv) "Enter this code on $phone. The two TVs will then share Up Next."
+                subtitle = if (vm.tvPairingFromTv) "Enter this code on $phone. The two TVs will then share Continue Watching."
                 else "Type this code on your phone. It can then send things to this TV and work as its remote.",
             )
             Spacer(Modifier.height(22.dp))
@@ -310,7 +310,7 @@ fun CastSheet(vm: AppViewModel) {
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "Up Next stays in step by itself: pause on the TV and carry on here.",
+                    "Continue Watching stays in step by itself: pause on the TV and carry on here.",
                     style = Txt.Caption,
                     color = Ember.Faint,
                     textAlign = TextAlign.Center,

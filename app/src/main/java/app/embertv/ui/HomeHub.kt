@@ -300,7 +300,7 @@ private fun LazyListScope.homeRows(
         if (history.isNotEmpty()) {
             item(key = "row-continue") {
                 // Like Apple TV: what you're part-way through, plus the next episode of what you finished.
-                HomeRow("Up Next", edge) {
+                HomeRow("Continue Watching", edge) {
                     LazyRow(contentPadding = rowPadding, horizontalArrangement = Arrangement.spacedBy(gap)) {
                         items(history, key = { it.key }) { e ->
                             ContinueCard(e, continueWidth, onClick = { vm.resume(e) }, onLongClick = { vm.removeHistory(e.key) })
@@ -848,7 +848,7 @@ fun PhoneHomeTab(vm: AppViewModel) {
                 } else {
                     item(key = "top") { Spacer(Modifier.height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 74.dp)) }
                 }
-                // Apple TV app sizes: big wide cards for Up Next, roomy posters, 20dp margins.
+                // Apple TV app sizes: big wide cards for Continue Watching, roomy posters, 20dp margins.
                 homeRows(vm, feed, edge = 20.dp, posterWidth = 118.dp, continueWidth = 270.dp, gap = 12.dp) { arranging = true }
             }
         }

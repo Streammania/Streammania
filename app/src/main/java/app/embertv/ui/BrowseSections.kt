@@ -651,7 +651,7 @@ fun SettingsSection(vm: AppViewModel) {
                     SettingRow(
                         "Other TVs",
                         vm.pairedTvs.firstOrNull()?.let { if (vm.pairedTvs.size == 1) "Linked with ${it.tv.name}" else "${vm.pairedTvs.size} linked" } ?: "None",
-                        "Share Up Next with another Fire TV at home",
+                        "Share Continue Watching with another Fire TV at home",
                         focusKey = "set:othertvs",
                     ) { linkingTvs = true }
                 }
