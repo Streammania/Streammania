@@ -63,6 +63,7 @@ import app.embertv.data.normalizeServer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.withPermit
@@ -1573,6 +1574,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var featuredJob: kotlinx.coroutines.Job? = null
 
     /**
+     * One low-priority thread for Home's picking work (matching titles across big film lists), so
+     * it can never take time from the player: the Fire TV always runs the picture and sound first.
+     */
+    private val quietWork: kotlinx.coroutines.CoroutineDispatcher by lazy {
+        java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+            Thread({
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                task.run()
+            }, "home-picks").apply { isDaemon = true }
+        }.asCoroutineDispatcher()
+    }
+
+    /** Waits while something is playing or the app is in the background. Background jobs call it first. */
+    private suspend fun waitForQuiet() {
+        while (playerOpen || !appVisible) delay(3_000)
+    }
+
+    /**
      * Picks the banner's films in the background: first what's trending this week that you can
      * watch, then the provider's newest releases. The last picks show straight away from the cache
      * while new ones are worked out, so the banner doesn't change under you as Home opens.
@@ -1590,8 +1609,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         featuredJob?.cancel()
         featuredJob = viewModelScope.launch {
-            // Home's own rows first.
+            // Home's own rows first, and never while something's playing.
             delay(1_500)
+            waitForQuiet()
             val picks = try {
                 pickFeatured(r)
             } catch (e: CancellationException) {
@@ -1651,8 +1671,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             .flatMapTo(HashSet()) { i -> freshByCat[i].map { it.streamId } }
         val serviceMovies = serviceLists.awaitAll().flatten()
         val wanted = trendingAsync.await()
+        // Started something while the lists came in? The matching waits until it's finished.
+        waitForQuiet()
 
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        kotlinx.coroutines.withContext(quietWork) {
             fun rating(m: Movie) = m.rating.toFloatOrNull() ?: 0f
             fun usable(m: Movie) = m.poster.isNotBlank() && !(rating(m) > 0f && rating(m) < 5f)
             val freshIds = freshMovies.mapTo(HashSet()) { it.streamId }
@@ -1792,6 +1814,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         homeExtrasFor = key
         homeExtrasJob?.cancel()
         homeExtrasJob = viewModelScope.launch {
+            waitForQuiet()
             val fresh = newEpisodesFor(r)
             val (becauseOf, because) = becauseYouWatched(r)
             if (repo === r) homeExtras = HomeExtras(fresh, becauseOf, because)
@@ -1812,7 +1835,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: OutOfMemoryError) {
             return emptyList()
         }
-        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        return kotlinx.coroutines.withContext(quietWork) {
             all.mapNotNull { s ->
                 val copies = listOf(s) + s.versions
                 val watchedAt = copies.mapNotNull { seen[it.seriesId] }.maxOrNull() ?: return@mapNotNull null
