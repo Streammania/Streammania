@@ -1295,45 +1295,46 @@ private fun ComingUpCard(
         onClick = onClick,
         onLongClick = onLongClick,
     ) { focused ->
+        // The same colours as the game cards beside it: white text, a quieter grey for the label on
+        // top, and black on white when it's highlighted.
         val text = if (focused) Color.Black else Ember.Text
+        val faint = if (focused) Color(0xFF55555C) else Ember.Faint
         val dim = if (focused) Color(0xFF55555C) else Ember.Dim
-        Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)) {
-            // The channel, small, with a bell if there's a reminder.
+        Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp, top = 11.dp, bottom = 12.dp)) {
+            // The channel, with its logo as everywhere else, and a bell if there's a reminder.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(width = 34.dp, height = 22.dp)
-                        .clip(RoundedCornerShape(5.dp))
-                        .background(if (focused) Color(0x14000000) else Color(0x14FFFFFF)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (channel.icon.isNotBlank()) NetImage(channel.icon, Modifier.fillMaxSize().padding(2.dp), ContentScale.Fit)
-                }
+                ChannelLogo(channel.icon, channel.name, Modifier.size(width = 40.dp, height = 26.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
                     channelParts(channel.name).first,
                     style = Txt.Caption,
-                    color = dim,
+                    color = faint,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
                 if (reminded) {
                     Spacer(Modifier.width(6.dp))
-                    Icon(EmberIcons.Bell, contentDescription = "Reminder set", tint = text, modifier = Modifier.size(13.dp))
+                    Icon(EmberIcons.Bell, contentDescription = "Reminder set", tint = text, modifier = Modifier.size(12.dp))
                 }
             }
-            Spacer(Modifier.height(10.dp))
-            // When: the clock time, and how long until it.
+            Spacer(Modifier.height(8.dp))
+            // When: the clock time, and how long until it. About to start reads like live
+            // elsewhere: a red dot and red words.
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(formatClock(programme.start), style = Txt.Title.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold), color = text)
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    if (soon) "Starting now" else "in ${untilLabel(programme.start - now)}",
-                    style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold),
-                    color = if (soon && !focused) Ember.Live else dim,
-                    modifier = Modifier.padding(bottom = 3.dp),
-                )
+                Row(Modifier.padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (soon) {
+                        Box(Modifier.size(6.dp).clip(CircleShape).background(Ember.Live))
+                        Spacer(Modifier.width(5.dp))
+                    }
+                    Text(
+                        if (soon) "Starting now" else "in ${untilLabel(programme.start - now)}",
+                        style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold),
+                        color = if (soon) (if (focused) Color.Black else Ember.Live) else dim,
+                    )
+                }
             }
             Spacer(Modifier.height(4.dp))
             Text(
@@ -1344,13 +1345,13 @@ private fun ComingUpCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.weight(1f))
-            // What OK does here.
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // What OK does here, styled like the line under a game card.
+            Row(Modifier.height(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     if (soon) EmberIcons.Play else EmberIcons.Bell,
                     contentDescription = null,
-                    tint = dim,
-                    modifier = Modifier.size(12.dp),
+                    tint = text,
+                    modifier = Modifier.size(13.dp),
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
@@ -1359,8 +1360,9 @@ private fun ComingUpCard(
                         reminded -> "Reminder on"
                         else -> "Remind me"
                     },
-                    style = Txt.Caption,
-                    color = dim,
+                    style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = text,
+                    maxLines = 1,
                 )
             }
         }
