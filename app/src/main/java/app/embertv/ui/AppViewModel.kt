@@ -3316,6 +3316,7 @@ private const val VOD_UPDATE_EVERY_MS = 3 * 60 * 60_000L
 val HOME_ROWS = listOf(
     "sport" to "Sport (live games and your teams)",
     "continue" to "Up Next",
+    "coming-up" to "Coming Up on Your Channels",
     "new-episodes" to "New Episodes",
     "recently-added" to "Recently Added",
     "because" to "Because You Watched",

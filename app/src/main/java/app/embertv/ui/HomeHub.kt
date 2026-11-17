@@ -31,6 +31,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Icon
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.produceState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -364,6 +367,15 @@ private fun LazyListScope.homeRows(
                     }
                 }
             }
+        }
+    }
+    rows["coming-up"] = {
+        // Your favourite channels, or the ones you watch most recently if you have none.
+        val favs = vm.favourites.filter { it.type == ContentType.LIVE }
+        val source = favs.ifEmpty { vm.recentChannels.toList() }.take(12).map { it.toChannel() }
+        val repo = vm.repo
+        if (source.isNotEmpty() && repo != null) {
+            item(key = "row-coming-up") { ComingUpRow(vm, repo, source, edge, rowPadding, gap, continueWidth) }
         }
     }
     rows["fav-channels"] = {
@@ -1187,5 +1199,182 @@ private fun TileOrderDialog(vm: AppViewModel, channels: Boolean, onDone: () -> U
             Spacer(Modifier.height(16.dp))
             GlassButton("Done", EmberIcons.Check, onClick = onDone)
         }
+    }
+}
+
+// ---------------- Coming up on your channels ----------------
+
+/**
+ * What starts in the next few hours on your channels, in time order, like a short guide: "21:00 ·
+ * Match of the Day · BBC One". OK on something about to start watches it; on something later it
+ * sets a reminder. Holding OK always goes straight to the channel.
+ */
+@Composable
+private fun ComingUpRow(
+    vm: AppViewModel,
+    repo: Repository,
+    channels: List<Channel>,
+    edge: Dp,
+    rowPadding: PaddingValues,
+    gap: Dp,
+    cardWidth: Dp,
+) {
+    val now = LocalNow.current
+    val ids = remember(channels) { channels.map { it.streamId } }
+    // The listings, gathered gently: what's already loaded shows at once, the rest one channel at a
+    // time after a short pause, so opening Home never waits on it.
+    val listings by produceState<Map<Int, List<app.embertv.data.Programme>>>(emptyMap(), repo, ids) {
+        val out = HashMap<Int, List<app.embertv.data.Programme>>()
+        for (c in channels) repo.cachedEpg(EpgAlias.of(c.streamId))?.let { out[c.streamId] = it }
+        value = HashMap(out)
+        delay(800)
+        for (c in channels) {
+            if (c.streamId in out) continue
+            val list = try {
+                repo.epg(EpgAlias.of(c.streamId))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            } ?: continue
+            out[c.streamId] = list
+            value = HashMap(out)
+        }
+    }
+    // Refreshed every five minutes as time moves on.
+    val upcoming = remember(listings, now / 300) {
+        val order = ids.withIndex().associate { (i, id) -> id to i }
+        channels
+            .flatMap { c ->
+                listings[c.streamId].orEmpty()
+                    .filter { it.title.isNotBlank() && it.start >= now - 5 * 60 && it.start < now + 4 * 3600 }
+                    .map { c to it }
+            }
+            .distinctBy { "${it.first.streamId}:${it.second.start}" }
+            .sortedWith(compareBy({ it.second.start }, { order[it.first.streamId] ?: 0 }))
+            .take(24)
+    }
+    if (upcoming.isEmpty()) return
+    HomeRow("Coming Up on Your Channels", edge) {
+        LazyRow(contentPadding = rowPadding, horizontalArrangement = Arrangement.spacedBy(gap)) {
+            items(upcoming, key = { "${it.first.streamId}:${it.second.start}" }) { (c, p) ->
+                val watch = { vm.push(Screen.PlayLive(channels, channels.indexOfFirst { it.streamId == c.streamId }.coerceAtLeast(0))) }
+                val soon = p.start - now <= 5 * 60
+                ComingUpCard(
+                    channel = c,
+                    programme = p,
+                    now = now,
+                    reminded = vm.hasReminder(c.streamId, p.start),
+                    width = cardWidth,
+                    onClick = { if (soon) watch() else vm.toggleReminder(c, p) },
+                    onLongClick = watch,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ComingUpCard(
+    channel: Channel,
+    programme: app.embertv.data.Programme,
+    now: Long,
+    reminded: Boolean,
+    width: Dp,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    val soon = programme.start - now <= 5 * 60
+    FocusBox(
+        modifier = Modifier.width(width).height(150.dp),
+        focusKey = "home:coming:${channel.streamId}:${programme.start}",
+        shape = RoundedCornerShape(18.dp),
+        focusedScale = 1.06f,
+        color = Ember.Card,
+        focusedColor = Color.White,
+        onClick = onClick,
+        onLongClick = onLongClick,
+    ) { focused ->
+        val text = if (focused) Color.Black else Ember.Text
+        val dim = if (focused) Color(0xFF55555C) else Ember.Dim
+        Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)) {
+            // The channel, small, with a bell if there's a reminder.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(width = 34.dp, height = 22.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(if (focused) Color(0x14000000) else Color(0x14FFFFFF)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (channel.icon.isNotBlank()) NetImage(channel.icon, Modifier.fillMaxSize().padding(2.dp), ContentScale.Fit)
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    channelParts(channel.name).first,
+                    style = Txt.Caption,
+                    color = dim,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (reminded) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(EmberIcons.Bell, contentDescription = "Reminder set", tint = text, modifier = Modifier.size(13.dp))
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            // When: the clock time, and how long until it.
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(formatClock(programme.start), style = Txt.Title.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold), color = text)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (soon) "Starting now" else "in ${untilLabel(programme.start - now)}",
+                    style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = if (soon && !focused) Ember.Live else dim,
+                    modifier = Modifier.padding(bottom = 3.dp),
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                programme.title,
+                style = Txt.Label.copy(fontWeight = FontWeight.SemiBold),
+                color = text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.weight(1f))
+            // What OK does here.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (soon) EmberIcons.Play else EmberIcons.Bell,
+                    contentDescription = null,
+                    tint = dim,
+                    modifier = Modifier.size(12.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    when {
+                        soon -> "Watch"
+                        reminded -> "Reminder on"
+                        else -> "Remind me"
+                    },
+                    style = Txt.Caption,
+                    color = dim,
+                )
+            }
+        }
+    }
+}
+
+/** "25 min", "1 hr", "2 hr 10 min". */
+private fun untilLabel(seconds: Long): String {
+    val mins = ((seconds + 59) / 60).coerceAtLeast(1)
+    val h = mins / 60
+    val m = mins % 60
+    return when {
+        h == 0L -> "$m min"
+        m == 0L -> "$h hr"
+        else -> "$h hr $m min"
     }
 }
