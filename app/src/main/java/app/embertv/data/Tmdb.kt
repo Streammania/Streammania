@@ -109,4 +109,35 @@ class Tmdb(private val key: String) {
         cache[cacheKey] = result
         return result
     }
+
+    private var trending: List<Suggestion>? = null
+    private var trendingAt = 0L
+
+    /**
+     * This week's most watched and talked-about films, most popular first (about 60). A film's
+     * original title is listed too when it differs, so either can match the provider's name. Kept
+     * for six hours.
+     */
+    suspend fun trendingMovies(): List<Suggestion> {
+        val now = System.currentTimeMillis()
+        trending?.let { if (now - trendingAt < 6 * 3_600_000L) return it }
+        val out = ArrayList<Suggestion>()
+        for (page in 1..3) {
+            val root = get("/trending/movie/week", "&page=$page") ?: break
+            for (o in asArray(root.opt("results")).objects()) {
+                val year = o.optString("release_date").take(4)
+                val path = o.optString("poster_path")
+                val poster = if (path.isNotBlank() && path != "null") "https://image.tmdb.org/t/p/w342$path" else ""
+                val title = o.optString("title")
+                val original = o.optString("original_title")
+                if (title.isNotBlank()) out += Suggestion(title, year, poster)
+                if (original.isNotBlank() && !original.equals(title, ignoreCase = true)) out += Suggestion(original, year, poster)
+            }
+        }
+        if (out.isNotEmpty()) {
+            trending = out
+            trendingAt = now
+        }
+        return out
+    }
 }

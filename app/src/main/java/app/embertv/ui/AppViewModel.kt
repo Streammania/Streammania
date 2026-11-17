@@ -62,6 +62,10 @@ import app.embertv.data.favouriteKey
 import app.embertv.data.normalizeServer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.withPermit
 
 sealed interface Screen {
     data object Home : Screen
@@ -1552,6 +1556,228 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (next.size > 400) next = next.entries.sortedByDescending { it.value }.take(400).associate { it.key to it.value }
         seriesSeen = next
         prefs.seriesSeen = next
+    }
+
+    // ---- The banner at the top of Home: trending and new films ----
+
+    /**
+     * Films for Home's banner. [trending] are this week's most popular films (from TMDB) that your
+     * provider has; [fresh] are its new releases. Each set holds stream ids, for the banner's label.
+     */
+    class Featured(val movies: List<Movie>, val trending: Set<Int>, val fresh: Set<Int>)
+
+    var featured by mutableStateOf<Featured?>(null)
+        private set
+    private var featuredKey: Any? = null
+    private var featuredScope: Any? = null
+    private var featuredJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Picks the banner's films in the background: first what's trending this week that you can
+     * watch, then the provider's newest releases. The last picks show straight away from the cache
+     * while new ones are worked out, so the banner doesn't change under you as Home opens.
+     */
+    fun ensureFeatured() {
+        val r = repo ?: return
+        val scope = listOf(r, profile?.id)
+        // Refreshed every few hours, as the trending list moves.
+        val key = listOf(scope, reloadToken, tmdbKey, System.currentTimeMillis() / (6 * 3_600_000L))
+        if (featuredKey == key) return
+        featuredKey = key
+        if (featuredScope != scope) {
+            featuredScope = scope
+            featured = readFeaturedCache()
+        }
+        featuredJob?.cancel()
+        featuredJob = viewModelScope.launch {
+            // Home's own rows first.
+            delay(1_500)
+            val picks = try {
+                pickFeatured(r)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            } catch (e: OutOfMemoryError) {
+                null
+            }
+            if (repo !== r || picks == null || picks.movies.isEmpty()) return@launch
+            // Only swapped in if it's actually different, so the banner doesn't jump for nothing.
+            if (featured?.movies?.map { it.streamId } != picks.movies.map { it.streamId }) featured = picks
+            writeFeaturedCache(picks)
+        }
+    }
+
+    private suspend fun pickFeatured(r: Repository): Featured = kotlinx.coroutines.coroutineScope {
+        val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        val cats = try {
+            r.movieCategories()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+        // The provider's own "new" groups: New Releases, Cinema, Top 10, Trending, this year...
+        val freshWords = Regex("(?i)\\bnew\\b|release|latest|trending|popular|top ?\\d+|\\btop\\b|cinema|box ?office|just added|in theat|\\b($year|${year - 1})\\b")
+        val freshCats = cats.filter { freshWords.containsMatchIn(it.name) }.take(6)
+        // Streaming services' groups, where this week's trending films often sit.
+        val serviceWords = Regex("(?i)netflix|prime|amazon|disney|apple|hbo|\\bmax\\b|paramount|peacock|hulu|sky|now ?tv")
+        val serviceCats = if (tmdb == null) emptyList() else cats.filter { it !in freshCats && serviceWords.containsMatchIn(it.name) }.take(3)
+        val gate = kotlinx.coroutines.sync.Semaphore(3)
+        suspend fun load(c: app.embertv.data.Category): List<Movie> = gate.withPermit {
+            try {
+                r.movies(c.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+        val freshLists = freshCats.map { c -> async { load(c) } }
+        val serviceLists = serviceCats.map { c -> async { load(c) } }
+        val trendingAsync = async {
+            try {
+                tmdb?.trendingMovies().orEmpty()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+        val freshMovies = freshLists.awaitAll().flatten()
+        val serviceMovies = serviceLists.awaitAll().flatten()
+        val wanted = trendingAsync.await()
+
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            fun rating(m: Movie) = m.rating.toFloatOrNull() ?: 0f
+            fun usable(m: Movie) = m.poster.isNotBlank() && !(rating(m) > 0f && rating(m) < 5f)
+            val freshIds = freshMovies.mapTo(HashSet()) { it.streamId }
+            val nowSec = System.currentTimeMillis() / 1000
+
+            // 1. Trending this week, in TMDB's order, matched by title (and year when the name has one).
+            val trending = ArrayList<Movie>()
+            if (wanted.isNotEmpty()) {
+                val rank = HashMap<String, Int>()
+                val years = HashMap<String, String>()
+                wanted.forEachIndexed { i, w ->
+                    val k = app.embertv.data.Versions.key(w.title)
+                    if (k.isNotBlank() && k !in rank) {
+                        rank[k] = i
+                        years[k] = w.year
+                    }
+                }
+                // A cheap look for each title's longest word before working out full title keys:
+                // the lists can hold tens of thousands of films.
+                val words = rank.keys.mapNotNull { k -> k.split(' ').maxByOrNull { it.length }?.takeIf { it.length > 2 } }.toSet()
+                val found = HashMap<String, Movie>()
+                // Merged lists first, so a film comes with all its qualities.
+                for (m in freshMovies.asSequence() + serviceMovies.asSequence() + r.loadedMovies().asSequence()) {
+                    if (!usable(m)) continue
+                    if (words.none { m.name.contains(it, ignoreCase = true) }) continue
+                    val k = app.embertv.data.Versions.key(m.name)
+                    if (k in found || k !in rank) continue
+                    val y = app.embertv.data.Versions.year(m.name)?.toIntOrNull()
+                    val wy = years[k]?.toIntOrNull()
+                    val sameFilm = if (y != null && wy != null) kotlin.math.abs(y - wy) <= 1
+                    // No year in the name: only if it's new on the provider too, not an old namesake.
+                    else m.streamId in freshIds || nowSec - m.added < 120L * 86_400L
+                    if (sameFilm) found[k] = m
+                }
+                found.entries.sortedBy { rank[it.key] ?: Int.MAX_VALUE }.mapTo(trending) { it.value }
+            }
+
+            // 2. New releases: this year's and last year's from the provider's new groups first,
+            //    then the best rated.
+            fun freshness(m: Movie): Int {
+                val y = app.embertv.data.Versions.year(m.name)?.toIntOrNull()
+                val byYear = when {
+                    y == null -> 0
+                    y >= year -> 2
+                    y == year - 1 -> 1
+                    else -> -1
+                }
+                return byYear + if (m.streamId in freshIds) 1 else 0
+            }
+            val newPool = if (freshMovies.isNotEmpty()) freshMovies
+            else r.loadedMovies().filter { (app.embertv.data.Versions.year(it.name)?.toIntOrNull() ?: 0) >= year - 1 }
+            val fresh = newPool.asSequence()
+                .filter { usable(it) && freshness(it) > 0 }
+                .sortedWith(compareByDescending<Movie> { freshness(it) }.thenByDescending { rating(it) }.thenByDescending { it.added })
+                .take(40)
+                .toList()
+
+            // Each film once, even when it's in several groups or qualities.
+            val keys = HashSet<String>()
+            val out = ArrayList<Movie>()
+            val trendingIds = HashSet<Int>()
+            val freshOut = HashSet<Int>()
+            for (m in trending) {
+                if (out.size >= 10) break
+                if (keys.add(app.embertv.data.Versions.key(m.name))) {
+                    out += m
+                    trendingIds += m.streamId
+                }
+            }
+            for (m in fresh) {
+                if (out.size >= 14) break
+                if (keys.add(app.embertv.data.Versions.key(m.name))) {
+                    out += m
+                    freshOut += m.streamId
+                }
+            }
+            Featured(out, trendingIds, freshOut)
+        }
+    }
+
+    private fun featuredSource(): String = prefs.account?.let { "${it.server}|${it.username}" }.orEmpty().hashCode().toString()
+
+    private fun readFeaturedCache(): Featured? = try {
+        val root = org.json.JSONObject(prefs.featuredCache.ifBlank { return null })
+        if (root.optString("src") != featuredSource()) null else {
+            val arr = root.optJSONArray("films") ?: org.json.JSONArray()
+            val movies = ArrayList<Movie>()
+            val trending = HashSet<Int>()
+            val fresh = HashSet<Int>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val m = Movie(
+                    streamId = o.optInt("id"),
+                    name = o.optString("name"),
+                    poster = o.optString("poster"),
+                    categoryId = o.optString("cat"),
+                    rating = o.optString("rating"),
+                    ext = o.optString("ext"),
+                    added = o.optLong("added"),
+                )
+                if (m.streamId <= 0 || m.poster.isBlank()) continue
+                movies += m
+                when (o.optString("kind")) {
+                    "t" -> trending += m.streamId
+                    "n" -> fresh += m.streamId
+                }
+            }
+            if (movies.isEmpty()) null else Featured(movies, trending, fresh)
+        }
+    } catch (e: Exception) {
+        null
+    }
+
+    private fun writeFeaturedCache(f: Featured) {
+        val arr = org.json.JSONArray()
+        for (m in f.movies.take(10)) {
+            arr.put(
+                org.json.JSONObject()
+                    .put("id", m.streamId)
+                    .put("name", m.name)
+                    .put("poster", m.poster)
+                    .put("cat", m.categoryId)
+                    .put("rating", m.rating)
+                    .put("ext", m.ext)
+                    .put("added", m.added)
+                    .put("kind", if (m.streamId in f.trending) "t" else if (m.streamId in f.fresh) "n" else "")
+            )
+        }
+        prefs.featuredCache = org.json.JSONObject().put("src", featuredSource()).put("films", arr).toString()
     }
 
     /** Works out New Episodes and Because You Watched, once per change of lists or of what was watched. */

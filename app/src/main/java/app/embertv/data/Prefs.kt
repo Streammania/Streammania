@@ -164,7 +164,7 @@ class Prefs(context: Context) {
         val e = sp.edit()
         for (key in sp.all.keys) {
             val belongs = if (id == MAIN_PROFILE) {
-                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next", "kickoff_reminders", "finished_at", "match_reminders", "home_artwork", "recent_searches") ||
+                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next", "kickoff_reminders", "finished_at", "match_reminders", "home_artwork", "recent_searches", "featured_cache") ||
                     key.startsWith("pos_") || key.startsWith("last_ep_")
             } else {
                 key.startsWith("p_${id}_")
@@ -615,6 +615,16 @@ class Prefs(context: Context) {
             sp.edit().putString(pk("recent_searches"), a.toString()).apply()
         }
 
+    /**
+     * The films last picked for Home's banner (trending and new releases), so it opens with them
+     * straight away while fresh picks are worked out. Only a cache: it never leaves this device.
+     */
+    var featuredCache: String
+        get() = sp.getString(pk("featured_cache"), "") ?: ""
+        set(value) {
+            sp.edit().putString(pk("featured_cache"), value).apply()
+        }
+
     /** "Not now" on an update: that version (versionCode) isn't offered again until [updateSnoozedUntil]. */
     var updateSnoozedCode: Int
         get() = sp.getInt("update_snoozed_code", 0)
@@ -674,7 +684,7 @@ class Prefs(context: Context) {
 
     /** Settings that belong to this device or account and never leave it. */
     private fun keepsLocal(key: String): Boolean =
-        key in DEVICE_ONLY || isProgressKey(key)
+        key in DEVICE_ONLY || isProgressKey(key) || key == "featured_cache" || key.endsWith("_featured_cache")
 
     private fun isProgressKey(key: String): Boolean {
         val base = if (key.startsWith("p_")) key.substringAfter('_').substringAfter('_') else key

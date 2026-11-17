@@ -135,22 +135,34 @@ internal suspend fun loadHomeFeed(repo: Repository): HomeFeed = kotlinx.coroutin
 }
 
 /**
- * The films for the big banner at the top of Home, picked for you rather than just the provider's
- * first category: first ones like what you've been watching (Because You Watched), then new
- * additions that are rated well, then (only if there's nothing else) the newest films. Nothing
- * you've already watched, and only ones with artwork. Empty when the banner is turned off.
+ * The films for the big banner at the top of Home: this week's trending films that your provider
+ * has (with TMDB), then its new releases. Only if neither turns anything up, the old way: like
+ * what you've been watching, then well-rated recent additions. Nothing you've already watched, and
+ * only ones with artwork. Empty when the banner is turned off.
  */
 private fun featuredFor(vm: AppViewModel, feed: HomeFeed): List<Movie> {
     if (FEATURED in vm.homeHidden) return emptyList()
     fun rating(m: Movie) = m.rating.toFloatOrNull() ?: 0f
     fun ok(m: Movie) = m.poster.isNotBlank() && !vm.movieWatched(m)
     val picked = LinkedHashMap<Int, Movie>()
-    vm.homeExtras?.because.orEmpty().filterIsInstance<Movie>().filter(::ok).take(3).forEach { picked[it.streamId] = it }
+    vm.featured?.movies.orEmpty().filter(::ok).forEach { if (picked.size < 8) picked.putIfAbsent(it.streamId, it) }
+    if (picked.size >= 3) return picked.values.toList()
+    vm.homeExtras?.because.orEmpty().filterIsInstance<Movie>().filter(::ok).take(3).forEach { if (picked.size < 6) picked.putIfAbsent(it.streamId, it) }
     val newest = feed.recent.filterIsInstance<Movie>().filter(::ok)
     newest.filter { rating(it) >= 6.5f }.sortedByDescending { rating(it) }.take(6).forEach { if (picked.size < 6) picked.putIfAbsent(it.streamId, it) }
     if (picked.size < 3) newest.take(6).forEach { if (picked.size < 6) picked.putIfAbsent(it.streamId, it) }
     if (picked.isEmpty()) feed.heroes.filter(::ok).forEach { if (picked.size < 6) picked.putIfAbsent(it.streamId, it) }
     return picked.values.toList()
+}
+
+/** The small label over the banner's title: why this film is there. */
+private fun featuredLabel(vm: AppViewModel, m: Movie): String {
+    val f = vm.featured
+    return when {
+        f != null && m.streamId in f.trending -> "TRENDING NOW"
+        f != null && m.streamId in f.fresh -> "NEW RELEASE"
+        else -> "FEATURED FOR YOU"
+    }
 }
 
 /** The id Arrange Home uses for the banner at the top. */
@@ -163,6 +175,8 @@ const val FEATURED = "featured"
 @Composable
 private fun rememberHomeFeed(vm: AppViewModel, repo: Repository): androidx.compose.runtime.State<LoadResult<HomeFeed>> {
     LaunchedEffect(repo, vm.reloadToken) { vm.ensureHome() }
+    // The banner's trending and new films, picked alongside.
+    LaunchedEffect(repo, vm.reloadToken, vm.tmdbKey, vm.profile?.id) { vm.ensureFeatured() }
     // New Episodes and Because You Watched, worked out alongside.
     LaunchedEffect(repo, vm.reloadToken, vm.vodVersion, vm.lastWatched) { vm.ensureHomeExtras() }
     return androidx.compose.runtime.rememberUpdatedState(vm.homeFeed)
@@ -734,7 +748,7 @@ private fun TvHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
         Column(
             Modifier.align(Alignment.BottomStart).padding(start = 48.dp, top = TV_MENU_SPACE + 30.dp, bottom = 20.dp).width(540.dp)
         ) {
-            Text("FEATURED FOR YOU", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim)
+            Text(featuredLabel(vm, movie), style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim)
             Spacer(Modifier.height(6.dp))
             Text(app.embertv.data.Versions.cleanTitle(movie.name), style = Txt.LargeTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(6.dp))
@@ -905,6 +919,12 @@ private fun PhoneHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            Text(
+                featuredLabel(vm, movie),
+                style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp),
+                color = Ember.Text.copy(alpha = 0.75f),
+            )
+            Spacer(Modifier.height(4.dp))
             Text(
                 app.embertv.data.Versions.cleanTitle(movie.name),
                 style = Txt.LargeTitle.copy(fontSize = (32f * Txt.scale).sp, lineHeight = (36f * Txt.scale).sp, letterSpacing = (-0.5).sp),
