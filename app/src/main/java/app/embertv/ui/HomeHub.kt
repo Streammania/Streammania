@@ -87,7 +87,13 @@ class HomeFeed(
     val seriesRows: List<Pair<Category, List<Series>>>,
     /** Newest films and shows (Movie or Series), newest first. */
     val recent: List<Any> = emptyList(),
+    /** The films in the provider's own Trending group (Films), in its order. */
+    val trending: List<Movie> = emptyList(),
 )
+
+/** The provider's trending film group by its name; failing that, its popular or Top 10 group. */
+private val TRENDING_GROUP = Regex("(?i)trending")
+private val POPULAR_GROUP = Regex("(?i)popular|top ?10\\b|top ?20\\b|most watched")
 
 private suspend fun <T> orNull(block: suspend () -> T): T? = try {
     block()
@@ -102,13 +108,19 @@ internal suspend fun loadHomeFeed(repo: Repository): HomeFeed = kotlinx.coroutin
     // The lists are fetched a few at a time rather than one after another, which is much quicker.
     val gate = kotlinx.coroutines.sync.Semaphore(4)
     suspend fun <T> limited(block: suspend () -> T): T = gate.withPermit { block() }
-    val movieCats = async { orNull { repo.movieCategories() }.orEmpty().take(8) }
+    val allMovieCats = async { orNull { repo.movieCategories() }.orEmpty() }
+    val movieCats = async { allMovieCats.await().take(8) }
     val seriesCats = async { orNull { repo.seriesCategories() }.orEmpty().take(5) }
     val liveCats = async { orNull { repo.liveCategories() }.orEmpty().take(3) }
-    // A few more categories than the rows need, so Recently Added has more to choose from.
+    // A few more categories than the rows need, so the banner's newest films have more to choose from.
     val movieLists = movieCats.await().map { c -> async { c to limited { orNull { repo.movies(c.id) }.orEmpty() } } }
     val seriesLists = seriesCats.await().map { c -> async { c to limited { orNull { repo.series(c.id) }.orEmpty() } } }
     val liveLists = liveCats.await().map { c -> async { c to limited { orNull { repo.channels(c.id) }.orEmpty() } } }
+    // The Trending group from Films, wherever it sits in the list.
+    val trendingCats = allMovieCats.await().let { cats ->
+        cats.filter { TRENDING_GROUP.containsMatchIn(it.name) }.ifEmpty { cats.filter { POPULAR_GROUP.containsMatchIn(it.name) } }
+    }.take(2)
+    val trendingLists = trendingCats.map { c -> async { limited { orNull { repo.movies(c.id) }.orEmpty() } } }
 
     val movieRows = ArrayList<Pair<Category, List<Movie>>>()
     val recentMovies = ArrayList<Movie>()
@@ -131,7 +143,8 @@ internal suspend fun loadHomeFeed(repo: Repository): HomeFeed = kotlinx.coroutin
     if (heroes.isEmpty() && movieRows.isEmpty() && seriesRows.isEmpty() && liveRow == null) {
         throw IllegalStateException("Nothing came back from your provider. Check your connection, then try again.")
     }
-    HomeFeed(heroes, liveRow, movieRows, seriesRows, recent)
+    val trending = trendingLists.awaitAll().flatten().filter { it.poster.isNotBlank() }.distinctBy { it.streamId }.take(40)
+    HomeFeed(heroes, liveRow, movieRows, seriesRows, recent, trending)
 }
 
 /**
@@ -324,37 +337,29 @@ private fun LazyListScope.homeRows(
             }
         }
     }
+    // Once Recently Added; the same spot in Arrange Home, now the films trending on your provider.
     rows["recently-added"] = {
-        if (feed.recent.isNotEmpty()) {
-            item(key = "row-recently-added") {
-                HomeRow("Recently Added", edge) {
+        val films = feed.trending.ifEmpty {
+            // No Trending group in Films: this week's trending films from TMDB, if it's connected.
+            vm.featured?.let { f -> f.movies.filter { it.streamId in f.trending } }.orEmpty()
+        }
+        if (films.isNotEmpty()) {
+            item(key = "row-trending") {
+                HomeRow("Trending Now", edge) {
                     LazyRow(contentPadding = rowPadding, horizontalArrangement = Arrangement.spacedBy(gap)) {
-                        items(feed.recent, key = { if (it is Movie) "m${it.streamId}" else "s${(it as Series).seriesId}" }) { item ->
-                            when (item) {
-                                is Movie -> PosterCard(
-                                    title = item.name,
-                                    image = item.poster,
-                                    focusKey = "home:new:m${item.streamId}",
-                                    modifier = Modifier.width(posterWidth),
-                                    subtitle = "Film",
-                                    badge = badgeText(item.qualities()),
-                                    favourite = vm.favKeys.contains(favouriteKey(ContentType.MOVIE, item.streamId)),
-                                    watched = vm.movieWatched(item),
-                                    onClick = { vm.push(Screen.MovieDetail(item)) },
-                                    onLongClick = { vm.toggleFavourite(vm.favouriteOf(item)) },
-                                )
-                                is Series -> PosterCard(
-                                    title = item.name,
-                                    image = item.cover,
-                                    focusKey = "home:new:s${item.seriesId}",
-                                    modifier = Modifier.width(posterWidth),
-                                    subtitle = "Series",
-                                    badge = badgeText(item.qualities()),
-                                    favourite = vm.favKeys.contains(favouriteKey(ContentType.SERIES, item.seriesId)),
-                                    onClick = { vm.push(Screen.SeriesDetail(item)) },
-                                    onLongClick = { vm.toggleFavourite(vm.favouriteOf(item)) },
-                                )
-                            }
+                        items(films, key = { it.streamId }) { m ->
+                            PosterCard(
+                                title = m.name,
+                                image = m.poster,
+                                focusKey = "home:trending:${m.streamId}",
+                                modifier = Modifier.width(posterWidth),
+                                subtitle = ratingLabel(m.rating),
+                                badge = badgeText(m.qualities()),
+                                favourite = vm.favKeys.contains(favouriteKey(ContentType.MOVIE, m.streamId)),
+                                watched = vm.movieWatched(m),
+                                onClick = { vm.push(Screen.MovieDetail(m)) },
+                                onLongClick = { vm.toggleFavourite(vm.favouriteOf(m)) },
+                            )
                         }
                     }
                 }

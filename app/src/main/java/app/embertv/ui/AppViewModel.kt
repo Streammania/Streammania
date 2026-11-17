@@ -1644,7 +1644,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 emptyList()
             }
         }
-        val freshMovies = freshLists.awaitAll().flatten()
+        val freshByCat = freshLists.awaitAll()
+        val freshMovies = freshByCat.flatten()
+        // Films in the provider's own Trending group are labelled as trending too.
+        val groupTrending = freshCats.indices.filter { freshCats[it].name.contains("trending", ignoreCase = true) }
+            .flatMapTo(HashSet()) { i -> freshByCat[i].map { it.streamId } }
         val serviceMovies = serviceLists.awaitAll().flatten()
         val wanted = trendingAsync.await()
 
@@ -1722,7 +1726,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (out.size >= 14) break
                 if (keys.add(app.embertv.data.Versions.key(m.name))) {
                     out += m
-                    freshOut += m.streamId
+                    if (m.streamId in groupTrending) trendingIds += m.streamId else freshOut += m.streamId
                 }
             }
             Featured(out, trendingIds, freshOut)
@@ -3544,7 +3548,7 @@ val HOME_ROWS = listOf(
     "continue" to "Continue Watching",
     "coming-up" to "Coming Up on Your Channels",
     "new-episodes" to "New Episodes",
-    "recently-added" to "Recently Added",
+    "recently-added" to "Trending Now",
     "because" to "Because You Watched",
     "recent-channels" to "Recently Watched channels",
     "fav-channels" to "Your Channels",
