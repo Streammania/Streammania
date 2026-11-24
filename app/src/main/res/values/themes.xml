@@ -10,4 +10,10 @@
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowContentOverlay">@null</item>
     </style>
+
+    <!-- Only while the app starts: the logo on the dark background. MainActivity switches to
+         Theme.Ember before it draws anything. -->
+    <style name="Theme.Ember.Launch">
+        <item name="android:windowBackground">@drawable/launch_screen</item>
+    </style>
 </resources>

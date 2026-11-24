@@ -36,6 +36,7 @@
 
         <activity
             android:name=".MainActivity"
+            android:theme="@style/Theme.Ember.Launch"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density"
             android:exported="true"
             android:launchMode="singleTask"

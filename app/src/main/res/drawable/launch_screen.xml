@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What shows while the app starts: the logo, centred on the app's dark background. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/ember_bg" />
+    <item
+        android:width="112dp"
+        android:height="112dp"
+        android:drawable="@drawable/brand_mark"
+        android:gravity="center" />
+</layer-list>

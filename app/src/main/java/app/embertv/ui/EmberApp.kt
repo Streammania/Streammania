@@ -217,15 +217,16 @@ private fun BoxScope.NoticeOverlay(vm: AppViewModel) {
             vm.clearNotice(notice)
         }
     }
+    // A notice drops in from the top in the same Liquid Glass as the pop-ups, and fades away.
     AnimatedVisibility(
         visible = notice != null,
-        enter = fadeIn(),
+        enter = fadeIn() + androidx.compose.animation.slideInVertically { -it / 2 },
         exit = fadeOut(),
         modifier = Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(top = 28.dp),
     ) {
         Box(
             Modifier
-                .glassSurface(RoundedCornerShape(22.dp), Color(0xE624242B))
+                .liquidGlass(RoundedCornerShape(22.dp))
                 .padding(horizontal = 22.dp, vertical = 12.dp)
         ) {
             Text(lastText[0], style = Txt.Label, color = Ember.Text)

@@ -24,6 +24,8 @@ class MainActivity : ComponentActivity() {
     private var swallowUp = -1
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // The logo shows while the app starts (Theme.Ember.Launch); from here, the app's own look.
+        setTheme(R.style.Theme_Ember)
         CrashNote.install(applicationContext)
         isTv = isTelevision()
         if (!isTv) {

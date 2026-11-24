@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12 and later draw their own start-up screen with the app's icon: keep it on the
+         app's dark background rather than the system's default colour. -->
+    <style name="Theme.Ember.Launch">
+        <item name="android:windowBackground">@drawable/launch_screen</item>
+        <item name="android:windowSplashScreenBackground">@color/ember_bg</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/ember_icon_bg</item>
+    </style>
+</resources>

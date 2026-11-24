@@ -301,7 +301,13 @@ private fun ClockAndDate(clockStyle: TextStyle, dateStyle: TextStyle, center: Bo
     }
 }
 
-/** The quiet hint under the banner's buttons. */
+/** The remote's keys under a banner's buttons on the TV, drawn like the rest of the app's hints. */
+@Composable
+private fun BannerKeys(hints: List<Hint>) {
+    RemoteHints(hints, Modifier.padding(top = 14.dp))
+}
+
+/** The quiet hint under a banner on a phone (no remote, so words). */
 @Composable
 internal fun BannerHint(text: String, center: Boolean = false) {
     if (!HintsSetting.show) return
@@ -452,7 +458,7 @@ private fun TvClockBanner(vm: AppViewModel, repo: Repository, onCustomise: () ->
                     onLongClick = onCustomise,
                 ) { if (place == null) settingPlace = true else forecast = true }
             }
-            BannerHint(if (channels.isNotEmpty()) "OK to watch   ·   Hold OK to change what's shown here" else "Hold OK to change what's shown here")
+            BannerKeys(if (channels.isNotEmpty()) listOf(Hint("OK", "Watch"), Hint("HOLD OK", "Change what's shown here")) else listOf(Hint("HOLD OK", "Change what's shown here")))
         }
     }
 }
@@ -762,7 +768,10 @@ private fun TvTeamsBanner(vm: AppViewModel, soonOnly: Boolean, onCustomise: () -
                     }
                 }
                 TeamTurns(teams, index, onPick = null)
-                BannerHint(if (teams.size > 1) "◀ ▶ for your other teams   ·   Hold OK to change what's shown here" else "Hold OK to change what's shown here")
+                BannerKeys(
+                    if (teams.size > 1) listOf(Hint("◀▶", "Your other teams"), Hint("HOLD OK", "Change what's shown here"))
+                    else listOf(Hint("HOLD OK", "Change what's shown here"))
+                )
             }
             // Where this team stands, on the right.
             LeagueTableCard(vm, team, Modifier.width(300.dp).padding(bottom = 4.dp), rows = 5)
@@ -856,7 +865,7 @@ private fun TvHolidayBanner(vm: AppViewModel, onCustomise: () -> Unit) {
                         TvButton("Surprise me", focusKey = "home:banner:surprise", onLongClick = onCustomise) { vm.push(Screen.MovieDetail(films.random())) }
                     }
                 }
-                BannerHint("Hold OK to change what's shown here")
+                BannerKeys(listOf(Hint("HOLD OK", "Change what's shown here")))
             }
             if (films.isNotEmpty()) PosterFan(films.take(4), posterWidth = 116.dp, step = 90.dp)
         }
@@ -1439,7 +1448,7 @@ private fun TvResumeBanner(vm: AppViewModel, repo: Repository, onCustomise: () -
                 ) { vm.resume(e) }
                 TvButton("More info", focusKey = "home:banner:info", onLongClick = onCustomise) { openDetails(vm, e) }
             }
-            BannerHint("Hold OK to change what's shown here")
+            BannerKeys(listOf(Hint("HOLD OK", "Change what's shown here")))
         }
     }
 }
