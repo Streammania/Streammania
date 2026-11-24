@@ -513,6 +513,13 @@ private fun matchChannel(vm: AppViewModel, m: Match): String? =
     vm.liveSport.firstOrNull { it.match.id == m.id }?.hits?.firstOrNull()?.channel?.name?.let { channelParts(it).first }
         ?: vm.fixtureChannels[m.id]?.ifEmpty { null }
 
+/**
+ * Christmas or New Year when the clock's background is one of them (Automatic in season, or
+ * chosen), so the teams banner can wear it too; null the rest of the year.
+ */
+private fun festiveTheme(vm: AppViewModel): ClockTheme? =
+    clockThemeNow(vm).takeIf { it == ClockTheme.CHRISTMAS || it == ClockTheme.NEW_YEAR }
+
 /** A team's game for the banner: live, else the next one, else the last result. */
 private fun teamMatch(vm: AppViewModel, team: Team): Match? {
     val nowMs = System.currentTimeMillis()
@@ -604,16 +611,24 @@ private fun TvTeamsBanner(vm: AppViewModel, soonOnly: Boolean, onCustomise: () -
     var findFocused by remember { mutableStateOf(false) }
     val soon = match?.state == MatchState.UPCOMING && match.kickoff - System.currentTimeMillis() < 15 * 60_000L
     val showFind = match?.state == MatchState.UPCOMING && !soon
+    val festive = festiveTheme(vm)
     Box(
         Modifier
             .fillMaxWidth()
             .heightIn(min = 310.dp + TV_MENU_SPACE)
-            .bannerGlow(
-                Triple(if (live) Color(0x66C8202D) else Color(0x5532508C), 0.1f, 0.25f),
-                Triple(Color(0x552A46A0), 0.62f, 0.15f),
-                dim = late,
+            .then(
+                if (festive != null) Modifier
+                else Modifier.bannerGlow(
+                    Triple(if (live) Color(0x66C8202D) else Color(0x5532508C), 0.1f, 0.25f),
+                    Triple(Color(0x552A46A0), 0.62f, 0.15f),
+                    dim = late,
+                )
             )
     ) {
+        // At Christmas and New Year, the same background as the clock.
+        if (festive != null) {
+            ClockBackdrop(festive, night = false, moving = !late, dim = late, lightsTop = TV_MENU_SPACE - 2.dp, modifier = Modifier.matchParentSize())
+        }
         Row(
             Modifier.fillMaxWidth().align(Alignment.BottomStart).padding(start = 48.dp, end = 48.dp, top = TV_MENU_SPACE + 20.dp, bottom = 22.dp),
             verticalAlignment = Alignment.Bottom,
@@ -1059,10 +1074,19 @@ private fun PhoneTeamsBanner(vm: AppViewModel, soonOnly: Boolean, top: Dp) {
     val match = team?.let { teamMatch(vm, it) }
     LaunchedEffect(match?.id) { match?.let { vm.lookUpFixtureChannel(it) } }
     val live = match?.state == MatchState.LIVE
+    val festive = festiveTheme(vm)
+    Box(Modifier.fillMaxWidth()) {
+    // At Christmas and New Year, the same background as the clock.
+    if (festive != null) {
+        ClockBackdrop(festive, night = false, moving = !late, dim = late, lightsTop = top - 16.dp, modifier = Modifier.matchParentSize())
+    }
     Column(
         Modifier
             .fillMaxWidth()
-            .bannerGlow(Triple(if (live) Color(0x66C8202D) else Color(0x5532508C), 0.1f, 0.2f), Triple(Color(0x552A46A0), 0.9f, 0.1f), dim = late)
+            .then(
+                if (festive != null) Modifier
+                else Modifier.bannerGlow(Triple(if (live) Color(0x66C8202D) else Color(0x5532508C), 0.1f, 0.2f), Triple(Color(0x552A46A0), 0.9f, 0.1f), dim = late)
+            )
             // Swipe sideways for your other teams.
             .pointerInput(teams.size) {
                 var travelled = 0f
@@ -1143,6 +1167,7 @@ private fun PhoneTeamsBanner(vm: AppViewModel, soonOnly: Boolean, top: Dp) {
         Spacer(Modifier.height(12.dp))
         LeagueTableCard(vm, team, Modifier.fillMaxWidth(), rows = 5)
         BannerHint(if (teams.size > 1) "Swipe for your other teams · press and hold to change what's shown here" else "Press and hold to change what's shown here", center = true)
+    }
     }
 }
 
