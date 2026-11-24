@@ -10,13 +10,17 @@ import java.net.URL
 import java.net.URLEncoder
 
 /** A place for the weather: what to call it and where it is. */
-data class WeatherPlace(val name: String, val detail: String, val lat: Double, val lon: Double) {
-    fun toJson(): String = JSONObject().put("name", name).put("detail", detail).put("lat", lat).put("lon", lon).toString()
+data class WeatherPlace(val name: String, val detail: String, val lat: Double, val lon: Double, val country: String = "") {
+    fun toJson(): String = JSONObject().put("name", name).put("detail", detail).put("lat", lat).put("lon", lon).put("cc", country).toString()
+
+    /** Fahrenheit where people use it (the US and a few others); Celsius everywhere else. */
+    val fahrenheit: Boolean
+        get() = country.uppercase() in setOf("US", "LR", "BS", "BZ", "KY", "PW", "FM", "MH")
 
     companion object {
         fun fromJson(s: String): WeatherPlace? = try {
             if (s.isBlank()) null else JSONObject(s).let { o ->
-                WeatherPlace(o.optString("name"), o.optString("detail"), o.optDouble("lat"), o.optDouble("lon"))
+                WeatherPlace(o.optString("name"), o.optString("detail"), o.optDouble("lat"), o.optDouble("lon"), o.optString("cc"))
                     .takeIf { it.name.isNotBlank() && !it.lat.isNaN() && !it.lon.isNaN() }
             }
         } catch (e: Exception) {
@@ -86,7 +90,7 @@ object Weather {
                 .filter { it.isNotBlank() && it != "null" && !it.equals(name, ignoreCase = true) }
                 .distinct()
                 .joinToString(", ")
-            out += WeatherPlace(name, detail, o.optDouble("latitude"), o.optDouble("longitude"))
+            out += WeatherPlace(name, detail, o.optDouble("latitude"), o.optDouble("longitude"), o.optString("country_code"))
         }
         return out
     }

@@ -608,6 +608,8 @@ private fun Team.asScore(): TeamScore = TeamScore(name, shortName, logo, "", id)
 @Composable
 private fun TvTeamsBanner(vm: AppViewModel, soonOnly: Boolean, onCustomise: () -> Unit) {
     val late = rememberLateNight()
+    var pickingTeams by remember { mutableStateOf(false) }
+    if (pickingTeams) TeamPicker(vm) { pickingTeams = false }
     val teams = bannerTeams(vm, soonOnly)
     var focused by remember { mutableStateOf(false) }
     val (index, setIndex) = rememberTurn(teams.size, paused = focused)
@@ -645,7 +647,7 @@ private fun TvTeamsBanner(vm: AppViewModel, soonOnly: Boolean, onCustomise: () -
                                 Text("Follow your teams", style = Txt.LargeTitle)
                                 Spacer(Modifier.height(6.dp))
                                 Text(
-                                    "Choose your teams in Settings → Sport, and their games show here with live scores and where to watch.",
+                                    "Choose your teams, and their games show here with live scores and where to watch.",
                                     style = Txt.Body,
                                     color = Ember.Text.copy(alpha = 0.85f),
                                     maxLines = 2,
@@ -753,7 +755,7 @@ private fun TvTeamsBanner(vm: AppViewModel, soonOnly: Boolean, onCustomise: () -
                             when {
                                 match != null && (live || soon) -> vm.watchKickoff(match)
                                 match != null && match.state == MatchState.UPCOMING -> vm.toggleMatchReminder(match)
-                                else -> vm.tab = Tabs.SETTINGS
+                                else -> pickingTeams = true
                             }
                         }
                     }
@@ -1088,6 +1090,8 @@ private fun PhoneClockBanner(vm: AppViewModel, repo: Repository, top: Dp) {
 @Composable
 private fun PhoneTeamsBanner(vm: AppViewModel, soonOnly: Boolean, top: Dp) {
     val late = rememberLateNight()
+    var pickingTeams by remember { mutableStateOf(false) }
+    if (pickingTeams) TeamPicker(vm) { pickingTeams = false }
     val teams = bannerTeams(vm, soonOnly)
     val (index, setIndex) = rememberTurn(teams.size, paused = false)
     val latestIndex by androidx.compose.runtime.rememberUpdatedState(index)
@@ -1124,13 +1128,13 @@ private fun PhoneTeamsBanner(vm: AppViewModel, soonOnly: Boolean, top: Dp) {
                         Text("Follow your teams", style = Txt.Title.copy(fontWeight = FontWeight.Bold))
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "Choose your teams in Settings → Sport, and their games show here.",
+                            "Choose your teams, and their games show here.",
                             style = Txt.Caption.copy(fontSize = 14.sp),
                             color = Ember.Text.copy(alpha = 0.8f),
                             textAlign = TextAlign.Center,
                         )
                         Spacer(Modifier.height(14.dp))
-                        PillButton("Choose teams", primary = true) { vm.tab = Tabs.SETTINGS }
+                        PillButton("Choose teams", primary = true) { pickingTeams = true }
                     }
                     match == null -> {
                         BannerCrest(team.asScore(), 64.dp)

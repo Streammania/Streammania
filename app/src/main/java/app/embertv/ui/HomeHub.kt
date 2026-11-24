@@ -733,6 +733,7 @@ fun ArrangeHomeDialog(vm: AppViewModel, onDone: () -> Unit) {
                 SheetOption(
                     "Top of Home",
                     focusKey = "arrange:banner",
+                    autoFocus = true,
                     subtitle = BannerModes.name(vm.bannerMode),
                     trailing = { dark -> androidx.compose.material3.Icon(EmberIcons.ChevronRight, contentDescription = null, tint = if (dark) Color.Black else Ember.Dim, modifier = Modifier.size(18.dp)) },
                 ) { choosingBanner = true }

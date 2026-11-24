@@ -104,6 +104,9 @@ fun edgePadding(): Dp = if (LocalIsTv.current) 48.dp else 20.dp
 fun PhoneHome(vm: AppViewModel) {
     var returnTab by remember { mutableIntStateOf(TAB_HOME) }
     val tab = vm.tab
+    // However Search or Settings was opened (the header, or a button on Home), Back returns to
+    // the tab you were on.
+    androidx.compose.runtime.LaunchedEffect(tab) { if (tab !in OVERLAY_TABS) returnTab = tab }
     val mainTab = tab !in OVERLAY_TABS
     val hasChips = tab in CHIP_TABS
     val isHome = tab == TAB_HOME

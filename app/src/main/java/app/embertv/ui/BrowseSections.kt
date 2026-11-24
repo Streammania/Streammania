@@ -509,8 +509,14 @@ fun SettingsSection(vm: AppViewModel) {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             val p = vm.profile
 
-            // ---- Look & Home ----
-            SettingsGroup("Look & Home", first = true) {
+            // ---- Home ----
+            SettingsGroup("Home", first = true) {
+                SettingRow(
+                    "Top of Home",
+                    BannerModes.name(vm.bannerMode),
+                    "Clock and weather, your teams, what you were watching, or holiday films",
+                    focusKey = "set:banner",
+                ) { choosingBanner = true }
                 if (!kids) {
                     val shownRows = HOME_ROWS.count { it.first !in vm.homeHidden }
                     SettingRow(
@@ -519,28 +525,38 @@ fun SettingsSection(vm: AppViewModel) {
                         "Which rows Home shows, and their order",
                         focusKey = "set:arrange",
                     ) { arrangingHome = true }
+                    SettingRow(
+                        "Weather",
+                        vm.weatherPlace?.name ?: "Not set",
+                        "Your town, for the clock and the screensaver",
+                        focusKey = "set:weather",
+                    ) { settingWeather = true }
                 }
-                SettingRow(
-                    "Top of Home",
-                    BannerModes.name(vm.bannerMode),
-                    "Clock and weather, your teams, or holiday films",
-                    focusKey = "set:banner",
-                ) { choosingBanner = true }
-                SettingRow("Background", Ember.backdrop.name, "The colour behind everything", focusKey = "set:backdrop") { pickingBackdrop = true }
                 if (isTv) {
                     SettingRow(
-                            "Artwork behind Home",
-                            if (vm.homeArtwork) "On" else "Off",
-                            "Home's background fades to the film or series you're on",
-                            focusKey = "set:homeart",
-                        ) { vm.toggleHomeArtwork() }
+                        "Artwork behind Home",
+                        if (vm.homeArtwork) "On" else "Off",
+                        "Home's background fades to the film or series you're on",
+                        focusKey = "set:homeart",
+                    ) { vm.toggleHomeArtwork() }
                 }
+                SettingRow(
+                    "When the app opens",
+                    vm.startOnLabel(),
+                    "Go straight to your last channel or the TV guide",
+                    focusKey = "set:starton",
+                ) { vm.cycleStartOn() }
+            }
+
+            // ---- Look ----
+            SettingsGroup("Look") {
+                SettingRow("Background", Ember.backdrop.name, "The colour behind everything", focusKey = "set:backdrop") { pickingBackdrop = true }
                 SettingRow("Text size", vm.textSizeLabel, "Bigger is easier to read from across the room", focusKey = "set:textsize") { vm.cycleTextSize() }
                 if (isTv) {
                     SettingRow(
                         "Screensaver",
                         if (vm.screensaverMinutes == 0) "Off" else "After ${vm.screensaverMinutes} min",
-                        "Film and series artwork when the remote is left alone",
+                        "Film and series artwork with the clock and weather, when the remote is left alone",
                         focusKey = "set:screensaver",
                     ) { vm.cycleScreensaver() }
                 }
@@ -684,12 +700,6 @@ fun SettingsSection(vm: AppViewModel) {
 
             // ---- This TV / phone & app ----
             SettingsGroup(if (isTv) "This TV & app" else "This phone & app") {
-                SettingRow(
-                    "Weather",
-                    vm.weatherPlace?.name ?: "Off",
-                    "Your town, for the clock and weather at the top of Home",
-                    focusKey = "set:weather",
-                ) { settingWeather = true }
                 if (!kids) SettingRow(
                     "Film details (TMDB)",
                     if (vm.tmdbKey.isBlank()) "Off" else "Connected",
@@ -752,12 +762,6 @@ fun SettingsSection(vm: AppViewModel) {
                                 focusKey = "set:preview",
                             ) { vm.toggleLivePreview() }
                     }
-                    SettingRow(
-                            "When the app opens",
-                            vm.startOnLabel(),
-                            "Go straight to your last channel or the TV guide",
-                            focusKey = "set:starton",
-                        ) { vm.cycleStartOn() }
                 }
 
                 // ---- Picture ----

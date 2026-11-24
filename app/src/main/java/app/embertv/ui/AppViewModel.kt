@@ -1608,8 +1608,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (last != null && System.currentTimeMillis() - last.fetchedAt < 20 * 60_000L) return
         if (weatherJob?.isActive == true) return
         weatherJob = viewModelScope.launch {
-            // Fahrenheit where that's what people use; Celsius everywhere else.
-            val fahrenheit = java.util.Locale.getDefault().country in setOf("US", "LR", "BS", "BZ", "KY", "PW")
+            // By where the town is (a place saved before that was known goes by the TV's region).
+            val fahrenheit = if (place.country.isNotBlank()) place.fahrenheit else java.util.Locale.getDefault().country == "US"
             val now = app.embertv.data.Weather.forecast(place, fahrenheit)
             if (now != null && weatherPlace == place) weather = now
         }
