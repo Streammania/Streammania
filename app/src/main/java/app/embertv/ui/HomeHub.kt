@@ -248,12 +248,15 @@ private fun LazyListScope.homeRows(
     val rows = HashMap<String, () -> Unit>()
     // One Sport row: live games first (with the channels showing them), then your teams' other fixtures.
     rows["sport"] = {
-        val sport = vm.liveSport
-        val liveIds = sport.map { it.match.id }.toSet()
-        val fixtures = vm.teamMatches.filter { it.id !in liveIds }.take(8)
+        // Games the banner at the top is already showing aren't repeated here.
+        val inBanner = bannerMatchIds(vm)
+        val allLive = vm.liveSport
+        val liveIds = allLive.map { it.match.id }.toSet()
+        val sport = allLive.filter { it.match.id !in inBanner }
+        val fixtures = vm.teamMatches.filter { it.id !in liveIds && it.id !in inBanner }.take(8)
         // With nothing live, the next games in your leagues too, counting down.
-        val shown = liveIds + fixtures.map { it.id }
-        val leagueNext = if (sport.isEmpty()) vm.leagueFixtures.filter { it.id !in shown }.take(10) else emptyList()
+        val shown = liveIds + fixtures.map { it.id } + inBanner
+        val leagueNext = if (allLive.isEmpty()) vm.leagueFixtures.filter { it.id !in shown }.take(10) else emptyList()
         if (sport.isNotEmpty() || fixtures.isNotEmpty() || leagueNext.isNotEmpty()) {
             item(key = "row-sport") {
                 HomeRow(if (sport.isNotEmpty() || leagueNext.isNotEmpty()) "Sport" else "Your Teams", edge) {
@@ -280,7 +283,9 @@ private fun LazyListScope.homeRows(
         }
     }
     rows["continue"] = {
-        val history = vm.history.toList()
+        // What the banner at the top is offering to carry on isn't repeated here.
+        val inBanner = bannerResumeKey(vm)
+        val history = vm.history.filter { it.key != inBanner }
         if (history.isNotEmpty()) {
             item(key = "row-continue") {
                 // Like Apple TV: what you're part-way through, plus the next episode of what you finished.

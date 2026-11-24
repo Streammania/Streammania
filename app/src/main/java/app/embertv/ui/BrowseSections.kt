@@ -691,12 +691,6 @@ fun SettingsSection(vm: AppViewModel) {
                     focusKey = "set:weather",
                 ) { settingWeather = true }
                 if (!kids) SettingRow(
-                    "News headlines",
-                    if (vm.headlinesOn) "On" else "Off",
-                    "BBC News headlines under the clock on Home",
-                    focusKey = "set:headlines",
-                ) { vm.toggleHeadlines() }
-                if (!kids) SettingRow(
                     "Film details (TMDB)",
                     if (vm.tmdbKey.isBlank()) "Off" else "Connected",
                     "Cast photos, trailers and suggestions",

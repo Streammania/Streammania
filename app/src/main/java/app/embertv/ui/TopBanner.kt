@@ -102,12 +102,14 @@ object BannerModes {
     const val TEAMS = "teams"
     const val HOLIDAY = "holiday"
     const val RESUME = "resume"
+    const val ROTATE = "rotate"
     const val OFF = "off"
 
     /** Each choice with its name and a line about it, in the order the picker lists them. */
     val ALL = listOf(
         Triple(AUTO, "Automatic", "Your teams when they're playing, what you were just watching, holiday films in season, and the clock and weather the rest of the time"),
-        Triple(CLOCK, "Clock & weather", "A big clock, the weather where you are, the news and what's on now"),
+        Triple(ROTATE, "Take turns", "Moves between the clock and the ones ticked below every 15 seconds"),
+        Triple(CLOCK, "Clock & weather", "A big clock, the weather where you are and what's on now"),
         Triple(RESUME, "Pick up where you left off", "What you were last watching, ready to carry on"),
         Triple(TEAMS, "Your teams", "Live scores, where to watch and their next games"),
         Triple(HOLIDAY, "Holiday", "Christmas films from mid-November, Halloween in October; the clock at other times"),
@@ -186,18 +188,82 @@ private fun bannerMatch(vm: AppViewModel, soonOnly: Boolean): Match? {
     return next ?: games.filter { it.state == MatchState.FINISHED }.maxByOrNull { it.kickoff }
 }
 
-/** Which banner to show now, for the profile's choice; null when it's turned off. */
-private fun bannerKind(vm: AppViewModel): BannerKind? = when (vm.bannerMode) {
-    BannerModes.OFF -> null
-    BannerModes.CLOCK -> BannerKind.CLOCK
-    BannerModes.TEAMS -> BannerKind.TEAMS
-    BannerModes.HOLIDAY -> if (Holiday.now() != null) BannerKind.HOLIDAY else BannerKind.CLOCK
-    BannerModes.RESUME -> if (resumeEntry(vm, recentOnly = false) != null) BannerKind.RESUME else BannerKind.CLOCK
-    else -> when {
-        bannerMatch(vm, soonOnly = true) != null -> BannerKind.TEAMS
-        resumeEntry(vm, recentOnly = true) != null -> BannerKind.RESUME
-        Holiday.now() != null && (vm.holidayPicks?.films?.size ?: 0) >= 3 -> BannerKind.HOLIDAY
-        else -> BannerKind.CLOCK
+private fun holidayReady(vm: AppViewModel): Boolean = Holiday.now() != null && (vm.holidayPicks?.films?.size ?: 0) >= 3
+
+/**
+ * The banners to show, for the profile's choice: one, or (Take turns) several to move between.
+ * Empty when it's turned off. Automatic and Take turns only use what's ticked in the picker.
+ */
+private fun bannerKinds(vm: AppViewModel): List<BannerKind> {
+    val ticked = vm.autoBanners
+    return when (vm.bannerMode) {
+        BannerModes.OFF -> emptyList()
+        BannerModes.CLOCK -> listOf(BannerKind.CLOCK)
+        BannerModes.TEAMS -> listOf(BannerKind.TEAMS)
+        BannerModes.HOLIDAY -> listOf(if (Holiday.now() != null) BannerKind.HOLIDAY else BannerKind.CLOCK)
+        BannerModes.RESUME -> listOf(if (resumeEntry(vm, recentOnly = false) != null) BannerKind.RESUME else BannerKind.CLOCK)
+        BannerModes.ROTATE -> buildList {
+            add(BannerKind.CLOCK)
+            if ("teams" in ticked && vm.followedTeams.isNotEmpty()) add(BannerKind.TEAMS)
+            if ("resume" in ticked && resumeEntry(vm, recentOnly = false) != null) add(BannerKind.RESUME)
+            if ("holiday" in ticked && holidayReady(vm)) add(BannerKind.HOLIDAY)
+        }
+        else -> listOf(
+            when {
+                "teams" in ticked && bannerMatch(vm, soonOnly = true) != null -> BannerKind.TEAMS
+                "resume" in ticked && resumeEntry(vm, recentOnly = true) != null -> BannerKind.RESUME
+                "holiday" in ticked && holidayReady(vm) -> BannerKind.HOLIDAY
+                else -> BannerKind.CLOCK
+            }
+        )
+    }
+}
+
+/** The Continue Watching item the banner is offering, so the row below can leave it out. */
+fun bannerResumeKey(vm: AppViewModel): String? =
+    if (BannerKind.RESUME in bannerKinds(vm)) resumeEntry(vm, recentOnly = false)?.key else null
+
+/** The games the teams banner is showing, so the Sport row can leave them out. */
+fun bannerMatchIds(vm: AppViewModel): Set<String> =
+    if (BannerKind.TEAMS in bannerKinds(vm)) bannerTeams(vm, soonOnly = vm.bannerMode == BannerModes.AUTO).mapNotNull { teamMatch(vm, it)?.id }.toSet()
+    else emptySet()
+
+/** Late at night (11pm to 6am) the banner dims and stops moving, so it isn't glaring in a dark room. */
+@Composable
+private fun rememberLateNight(): Boolean {
+    val now = LocalNow.current
+    return remember(now / 60) {
+        val hour = Calendar.getInstance().apply { timeInMillis = now * 1000 }.get(Calendar.HOUR_OF_DAY)
+        hour >= 23 || hour < 6
+    }
+}
+
+/** "Good evening, Michael" over the clock (just "Good evening" for an unnamed profile). */
+@Composable
+private fun Greeting(vm: AppViewModel, style: TextStyle, modifier: Modifier = Modifier) {
+    val now = LocalNow.current
+    val hour = remember(now / 300) { Calendar.getInstance().apply { timeInMillis = now * 1000 }.get(Calendar.HOUR_OF_DAY) }
+    val part = when (hour) {
+        in 5..11 -> "Good morning"
+        in 12..17 -> "Good afternoon"
+        else -> "Good evening"
+    }
+    val name = vm.profile?.name?.trim().orEmpty().takeIf { it.isNotBlank() && !it.equals("Me", ignoreCase = true) }
+    Text(if (name != null) "$part, $name" else part, style = style, color = Ember.Text.copy(alpha = 0.85f), maxLines = 1, modifier = modifier)
+}
+
+/** Which banner is showing when they take turns: a small glass strip of dots. */
+@Composable
+private fun TurnDots(count: Int, index: Int, modifier: Modifier) {
+    if (count <= 1) return
+    Row(
+        modifier.glassSurface(RoundedCornerShape(12.dp), Color(0x33000000)).padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        for (i in 0 until count) {
+            Box(Modifier.size(width = if (i == index) 18.dp else 6.dp, height = 6.dp).clip(RoundedCornerShape(3.dp)).background(if (i == index) Color.White else Color(0x66FFFFFF)))
+        }
     }
 }
 
@@ -262,23 +328,30 @@ private fun BannerHint(text: String, center: Boolean = false) {
 @Composable
 fun TvTopBanner(vm: AppViewModel, repo: Repository) {
     // The holiday's films are only gathered when this banner could show them.
-    if (vm.bannerMode == BannerModes.AUTO || vm.bannerMode == BannerModes.HOLIDAY) {
+    if (vm.bannerMode == BannerModes.AUTO || vm.bannerMode == BannerModes.HOLIDAY || vm.bannerMode == BannerModes.ROTATE) {
         LaunchedEffect(repo, vm.reloadToken, vm.profile?.id) { vm.ensureHoliday() }
     }
     var picking by remember { mutableStateOf(false) }
     if (picking) BannerPickerDialog(vm) { picking = false }
-    val kind = bannerKind(vm)
-    if (kind == null) {
+    val kinds = bannerKinds(vm)
+    if (kinds.isEmpty()) {
         Spacer(Modifier.height(TV_MENU_SPACE))
         return
     }
+    // Take turns: the next one every 15 seconds, holding still while you're on it.
+    var focused by remember { mutableStateOf(false) }
+    val (turn, _) = rememberTurn(kinds.size, paused = focused, periodMs = 15_000L)
+    val kind = kinds[turn]
     val scope = rememberCoroutineScope()
     Box(
         Modifier
             .fillMaxWidth()
             .heightIn(min = 310.dp + TV_MENU_SPACE)
-            // Back on the banner: the page slides back to the top, as on Apple TV.
-            .onFocusChanged { if (it.hasFocus) scope.launch { runCatching { vm.home.list("tv").animateScrollToItem(0) } } }
+            .onFocusChanged {
+                focused = it.hasFocus
+                // Back on the banner: the page slides back to the top, as on Apple TV.
+                if (it.hasFocus) scope.launch { runCatching { vm.home.list("tv").animateScrollToItem(0) } }
+            }
     ) {
         Crossfade(targetState = kind, label = "banner") { k ->
             when (k) {
@@ -288,15 +361,27 @@ fun TvTopBanner(vm: AppViewModel, repo: Repository) {
                 BannerKind.RESUME -> TvResumeBanner(vm, repo) { picking = true }
             }
         }
+        TurnDots(kinds.size, turn, Modifier.align(Alignment.TopEnd).padding(top = TV_MENU_SPACE + 8.dp, end = 48.dp))
     }
 }
 
+/** Warm reds, golds and greens for Christmas; orange and purple for Halloween. */
+private fun festiveGlows(christmas: Boolean, wide: Boolean): Array<Triple<Color, Float, Float>> = when {
+    christmas && wide -> arrayOf(
+        Triple(Color(0x8CD63C28), 0.75f, 0f),
+        Triple(Color(0x59E6AA46), 0.98f, 0.6f),
+        Triple(Color(0x592A7850), 0.08f, 0f),
+    )
+    christmas -> arrayOf(Triple(Color(0x8CD63C28), 0.8f, 0f), Triple(Color(0x592A7850), 0.1f, 0.1f))
+    else -> arrayOf(Triple(Color(0x80E0701E), 0.75f, 0f), Triple(Color(0x596A2C9A), 0.08f, 0.1f))
+}
+
 /** The soft colour behind a banner, fading into the page at the bottom. */
-private fun Modifier.bannerGlow(vararg glows: Triple<Color, Float, Float>): Modifier = drawBehind {
+private fun Modifier.bannerGlow(vararg glows: Triple<Color, Float, Float>, dim: Boolean = false): Modifier = drawBehind {
     for ((color, x, y) in glows) {
         drawRect(
             Brush.radialGradient(
-                listOf(color, Color.Transparent),
+                listOf(if (dim) color.copy(alpha = color.alpha * 0.35f) else color, Color.Transparent),
                 center = Offset(size.width * x, size.height * y),
                 radius = size.width * 0.55f,
             )
@@ -307,6 +392,7 @@ private fun Modifier.bannerGlow(vararg glows: Triple<Color, Float, Float>): Modi
 
 @Composable
 private fun TvClockBanner(vm: AppViewModel, repo: Repository, onCustomise: () -> Unit) {
+    val late = rememberLateNight()
     val place = vm.weatherPlace
     val weather = vm.weather
     // Kept fresh while it's on screen; it only fetches when the last one is 20 minutes old.
@@ -320,12 +406,6 @@ private fun TvClockBanner(vm: AppViewModel, repo: Repository, onCustomise: () ->
     if (settingPlace) WeatherPlaceDialog(vm) { settingPlace = false }
     var forecast by remember { mutableStateOf(false) }
     if (forecast) ForecastDialog(vm) { forecast = false }
-    LaunchedEffect(vm.headlinesOn) {
-        while (true) {
-            vm.refreshHeadlines()
-            delay(5 * 60_000L)
-        }
-    }
     val onNow = rememberOnNow(vm, repo)
     val night = weather?.day == false
     val hero = LocalHomeEntry.current?.hero
@@ -336,13 +416,19 @@ private fun TvClockBanner(vm: AppViewModel, repo: Repository, onCustomise: () ->
             .bannerGlow(
                 Triple(if (night) Color(0x8C2A3570) else Color(0x8C3D5E96), 0.82f, 0f),
                 Triple(Color(0x55402A66), 0f, 1f),
+                dim = late,
             )
     ) {
         Row(
-            Modifier.fillMaxWidth().align(Alignment.BottomStart).padding(start = 48.dp, end = 48.dp, top = TV_MENU_SPACE + 6.dp, bottom = 22.dp),
+            Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomStart)
+                .padding(start = 48.dp, end = 48.dp, top = TV_MENU_SPACE + 6.dp, bottom = 22.dp)
+                .graphicsLayer { alpha = if (late) 0.78f else 1f },
             verticalAlignment = Alignment.Bottom,
         ) {
             Column(Modifier.weight(1f)) {
+                Greeting(vm, Txt.Headline, Modifier.padding(start = 6.dp))
                 ClockAndDate(
                     clockStyle = Txt.LargeTitle.copy(fontSize = 118.sp, lineHeight = 120.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-5).sp),
                     dateStyle = Txt.Headline,
@@ -365,7 +451,6 @@ private fun TvClockBanner(vm: AppViewModel, repo: Repository, onCustomise: () ->
                         )
                     }
                 }
-                HeadlinePill(vm, onCustomise)
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (channel != null) {
@@ -472,13 +557,13 @@ private fun bannerTeams(vm: AppViewModel, soonOnly: Boolean): List<Team> {
     return teams
 }
 
-/** Which of [count] teams is showing: the next one every ten seconds, unless [paused]. */
+/** Which of [count] things is showing: the next one every [periodMs], unless [paused]. */
 @Composable
-private fun rememberTeamTurn(count: Int, paused: Boolean): Pair<Int, (Int) -> Unit> {
+private fun rememberTurn(count: Int, paused: Boolean, periodMs: Long = 10_000L): Pair<Int, (Int) -> Unit> {
     var index by remember { mutableIntStateOf(0) }
     LaunchedEffect(count, paused, index) {
         if (count <= 1 || paused) return@LaunchedEffect
-        delay(10_000)
+        delay(periodMs)
         index = (index + 1) % count
     }
     val safe = if (count == 0) 0 else index.mod(count)
@@ -522,9 +607,10 @@ private fun Team.asScore(): TeamScore = TeamScore(name, shortName, logo, "", id)
 
 @Composable
 private fun TvTeamsBanner(vm: AppViewModel, soonOnly: Boolean, onCustomise: () -> Unit) {
+    val late = rememberLateNight()
     val teams = bannerTeams(vm, soonOnly)
     var focused by remember { mutableStateOf(false) }
-    val (index, setIndex) = rememberTeamTurn(teams.size, paused = focused)
+    val (index, setIndex) = rememberTurn(teams.size, paused = focused)
     val team = teams.getOrNull(index)
     val match = team?.let { teamMatch(vm, it) }
     LaunchedEffect(match?.id) { match?.let { vm.lookUpFixtureChannel(it) } }
@@ -542,6 +628,7 @@ private fun TvTeamsBanner(vm: AppViewModel, soonOnly: Boolean, onCustomise: () -
             .bannerGlow(
                 Triple(if (live) Color(0x66C8202D) else Color(0x5532508C), 0.1f, 0.25f),
                 Triple(Color(0x552A46A0), 0.62f, 0.15f),
+                dim = late,
             )
     ) {
         Row(
@@ -716,6 +803,7 @@ private fun BannerCrest(team: TeamScore, size: Dp) {
 
 @Composable
 private fun TvHolidayBanner(vm: AppViewModel, onCustomise: () -> Unit) {
+    val late = rememberLateNight()
     val holiday = Holiday.now() ?: Holiday.CHRISTMAS
     val picks = vm.holidayPicks?.takeIf { it.holiday == holiday }
     val films = picks?.films.orEmpty()
@@ -725,20 +813,11 @@ private fun TvHolidayBanner(vm: AppViewModel, onCustomise: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .heightIn(min = 310.dp + TV_MENU_SPACE)
-            .bannerGlow(
-                *(if (christmas) arrayOf(
-                    Triple(Color(0x8CD63C28), 0.75f, 0f),
-                    Triple(Color(0x59E6AA46), 0.98f, 0.6f),
-                    Triple(Color(0x592A7850), 0.08f, 0f),
-                ) else arrayOf(
-                    Triple(Color(0x80E0701E), 0.75f, 0f),
-                    Triple(Color(0x596A2C9A), 0.08f, 0.1f),
-                ))
-            )
+            .bannerGlow(*festiveGlows(christmas, wide = true), dim = late)
     ) {
         if (christmas) {
-            Snowfall(Modifier.matchParentSize())
-            FairyLights(Modifier.fillMaxWidth().height(30.dp).offset(y = TV_MENU_SPACE - 2.dp))
+            Snowfall(Modifier.matchParentSize(), moving = !late)
+            FairyLights(Modifier.fillMaxWidth().height(30.dp).offset(y = TV_MENU_SPACE - 2.dp), moving = !late)
         }
         Row(
             Modifier.fillMaxWidth().align(Alignment.BottomStart).padding(start = 48.dp, end = 48.dp, top = TV_MENU_SPACE + 40.dp, bottom = 22.dp),
@@ -810,12 +889,19 @@ private fun PosterFan(films: List<Movie>, posterWidth: Dp, step: Dp) {
     }
 }
 
-/** Gentle snow drifting down: drawn in its own layer, so it never makes the page itself redraw. */
+/**
+ * Gentle snow drifting down, drawn in its own layer so it never makes the page itself redraw.
+ * Late at night ([moving] false) it stands still.
+ */
 @Composable
-private fun Snowfall(modifier: Modifier) {
+private fun Snowfall(modifier: Modifier, moving: Boolean) {
     val flakes = remember {
         val r = java.util.Random(7)
         List(60) { floatArrayOf(r.nextFloat(), r.nextFloat(), 1.2f + r.nextFloat() * 2.6f, 0.5f + r.nextFloat(), r.nextFloat()) }
+    }
+    if (!moving) {
+        Canvas(modifier) { drawSnow(flakes, 0.35f) }
+        return
     }
     val time by rememberInfiniteTransition(label = "snow").animateFloat(
         initialValue = 0f,
@@ -823,46 +909,54 @@ private fun Snowfall(modifier: Modifier) {
         animationSpec = infiniteRepeatable(tween(24_000, easing = LinearEasing)),
         label = "snow",
     )
-    Canvas(modifier.graphicsLayer {}) {
-        val t: Float = time
-        for (f in flakes) {
-            // x, y, size, speed, phase: each falls at its own pace and sways a little.
-            val y = ((f[1] + t * f[3] * 2f) % 1f) * size.height
-            val x = (f[0] * size.width + sin((t * 6f + f[4]) * 2f * PI.toFloat()) * 14f)
-            drawCircle(Color.White.copy(alpha = 0.25f + f[2] / 3.8f * 0.45f), radius = f[2] * density / 1.6f, center = Offset(x, y))
-        }
+    Canvas(modifier.graphicsLayer {}) { drawSnow(flakes, time) }
+}
+
+private fun DrawScope.drawSnow(flakes: List<FloatArray>, t: Float) {
+    for (f in flakes) {
+        // x, y, size, speed, phase: each falls at its own pace and sways a little.
+        val y = ((f[1] + t * f[3] * 2f) % 1f) * size.height
+        val x = (f[0] * size.width + sin((t * 6f + f[4]) * 2f * PI.toFloat()) * 14f)
+        drawCircle(Color.White.copy(alpha = 0.25f + f[2] / 3.8f * 0.45f), radius = f[2] * density / 1.6f, center = Offset(x, y))
     }
 }
 
-/** A string of fairy lights along the top, twinkling softly. */
+/** A string of fairy lights along the top, twinkling softly (still, late at night). */
 @Composable
-private fun FairyLights(modifier: Modifier) {
-    val colours = listOf(Color(0xFFFFD27A), Color(0xFFFF6B5A), Color(0xFF9FE0A8), Color(0xFFFFF3D6))
+private fun FairyLights(modifier: Modifier, moving: Boolean) {
+    if (!moving) {
+        Canvas(modifier) { drawLights(0.25f) }
+        return
+    }
     val time by rememberInfiniteTransition(label = "lights").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(6_000, easing = LinearEasing), RepeatMode.Restart),
         label = "lights",
     )
-    Canvas(modifier.graphicsLayer {}) {
-        val step = 36.dp.toPx()
-        val count = (size.width / step).toInt() + 1
-        val wire = Path()
-        for (i in 0 until count) {
-            val x = 18.dp.toPx() + i * step
-            val y = size.height / 2 + sin(i * 0.9f) * 6.dp.toPx()
-            if (i == 0) wire.moveTo(x, y) else wire.lineTo(x, y)
-        }
-        drawPath(wire, Color(0x33FFFFFF), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()))
-        for (i in 0 until count) {
-            val x = 18.dp.toPx() + i * step
-            val y = size.height / 2 + sin(i * 0.9f) * 6.dp.toPx()
-            val c = colours[i % colours.size]
-            val phase: Float = time + i * 0.17f
-            val glow: Float = 0.55f + 0.45f * sin(phase * 2f * PI.toFloat())
-            drawCircle(c.copy(alpha = 0.22f * glow), radius = 9.dp.toPx(), center = Offset(x, y))
-            drawCircle(c.copy(alpha = 0.6f + 0.4f * glow), radius = 3.5.dp.toPx(), center = Offset(x, y))
-        }
+    Canvas(modifier.graphicsLayer {}) { drawLights(time) }
+}
+
+private val LightColours = listOf(Color(0xFFFFD27A), Color(0xFFFF6B5A), Color(0xFF9FE0A8), Color(0xFFFFF3D6))
+
+private fun DrawScope.drawLights(time: Float) {
+    val step = 36.dp.toPx()
+    val count = (size.width / step).toInt() + 1
+    val wire = Path()
+    for (i in 0 until count) {
+        val x = 18.dp.toPx() + i * step
+        val y = size.height / 2 + sin(i * 0.9f) * 6.dp.toPx()
+        if (i == 0) wire.moveTo(x, y) else wire.lineTo(x, y)
+    }
+    drawPath(wire, Color(0x33FFFFFF), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()))
+    for (i in 0 until count) {
+        val x = 18.dp.toPx() + i * step
+        val y = size.height / 2 + sin(i * 0.9f) * 6.dp.toPx()
+        val c = LightColours[i % LightColours.size]
+        val phase: Float = time + i * 0.17f
+        val glow: Float = 0.55f + 0.45f * sin(phase * 2f * PI.toFloat())
+        drawCircle(c.copy(alpha = 0.22f * glow), radius = 9.dp.toPx(), center = Offset(x, y))
+        drawCircle(c.copy(alpha = 0.6f + 0.4f * glow), radius = 3.5.dp.toPx(), center = Offset(x, y))
     }
 }
 
@@ -872,17 +966,19 @@ private fun FairyLights(modifier: Modifier) {
 @Composable
 fun PhoneTopBanner(vm: AppViewModel, repo: Repository) {
     // The holiday's films are only gathered when this banner could show them.
-    if (vm.bannerMode == BannerModes.AUTO || vm.bannerMode == BannerModes.HOLIDAY) {
+    if (vm.bannerMode == BannerModes.AUTO || vm.bannerMode == BannerModes.HOLIDAY || vm.bannerMode == BannerModes.ROTATE) {
         LaunchedEffect(repo, vm.reloadToken, vm.profile?.id) { vm.ensureHoliday() }
     }
     var picking by remember { mutableStateOf(false) }
     if (picking) BannerPickerDialog(vm) { picking = false }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 74.dp
-    val kind = bannerKind(vm)
-    if (kind == null) {
+    val kinds = bannerKinds(vm)
+    if (kinds.isEmpty()) {
         Spacer(Modifier.height(top))
         return
     }
+    val (turn, _) = rememberTurn(kinds.size, paused = false, periodMs = 15_000L)
+    val kind = kinds[turn]
     // Press and hold anywhere on it (away from its buttons) to choose what it shows.
     Box(Modifier.fillMaxWidth().pointerInput(Unit) { detectTapGestures(onLongPress = { picking = true }) }) {
         Crossfade(targetState = kind, label = "banner") { k ->
@@ -893,11 +989,13 @@ fun PhoneTopBanner(vm: AppViewModel, repo: Repository) {
                 BannerKind.RESUME -> PhoneResumeBanner(vm, repo)
             }
         }
+        TurnDots(kinds.size, turn, Modifier.align(Alignment.TopEnd).padding(top = top + 2.dp, end = 16.dp))
     }
 }
 
 @Composable
 private fun PhoneClockBanner(vm: AppViewModel, repo: Repository, top: Dp) {
+    val late = rememberLateNight()
     val place = vm.weatherPlace
     val weather = vm.weather
     LaunchedEffect(place) {
@@ -910,21 +1008,17 @@ private fun PhoneClockBanner(vm: AppViewModel, repo: Repository, top: Dp) {
     if (settingPlace) WeatherPlaceDialog(vm) { settingPlace = false }
     var forecast by remember { mutableStateOf(false) }
     if (forecast) ForecastDialog(vm) { forecast = false }
-    LaunchedEffect(vm.headlinesOn) {
-        while (true) {
-            vm.refreshHeadlines()
-            delay(5 * 60_000L)
-        }
-    }
     val onNow = rememberOnNow(vm, repo)
     val night = weather?.day == false
     Column(
         Modifier
             .fillMaxWidth()
-            .bannerGlow(Triple(if (night) Color(0x8C2A3570) else Color(0x8C3D5E96), 0.85f, 0f), Triple(Color(0x55402A66), 0f, 0.9f))
-            .padding(start = 20.dp, end = 20.dp, top = top, bottom = 12.dp),
+            .bannerGlow(Triple(if (night) Color(0x8C2A3570) else Color(0x8C3D5E96), 0.85f, 0f), Triple(Color(0x55402A66), 0f, 0.9f), dim = late)
+            .padding(start = 20.dp, end = 20.dp, top = top, bottom = 12.dp)
+            .graphicsLayer { alpha = if (late) 0.78f else 1f },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Greeting(vm, Txt.Label.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold))
         ClockAndDate(
             clockStyle = Txt.LargeTitle.copy(fontSize = 78.sp, lineHeight = 82.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-3).sp),
             dateStyle = Txt.Label.copy(fontSize = 17.sp),
@@ -978,7 +1072,6 @@ private fun PhoneClockBanner(vm: AppViewModel, repo: Repository, top: Dp) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        HeadlinePill(vm, onCustomise = null)
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (channel != null) {
@@ -994,8 +1087,9 @@ private fun PhoneClockBanner(vm: AppViewModel, repo: Repository, top: Dp) {
 
 @Composable
 private fun PhoneTeamsBanner(vm: AppViewModel, soonOnly: Boolean, top: Dp) {
+    val late = rememberLateNight()
     val teams = bannerTeams(vm, soonOnly)
-    val (index, setIndex) = rememberTeamTurn(teams.size, paused = false)
+    val (index, setIndex) = rememberTurn(teams.size, paused = false)
     val latestIndex by androidx.compose.runtime.rememberUpdatedState(index)
     val latestSet by androidx.compose.runtime.rememberUpdatedState(setIndex)
     val team = teams.getOrNull(index)
@@ -1005,7 +1099,7 @@ private fun PhoneTeamsBanner(vm: AppViewModel, soonOnly: Boolean, top: Dp) {
     Column(
         Modifier
             .fillMaxWidth()
-            .bannerGlow(Triple(if (live) Color(0x66C8202D) else Color(0x5532508C), 0.1f, 0.2f), Triple(Color(0x552A46A0), 0.9f, 0.1f))
+            .bannerGlow(Triple(if (live) Color(0x66C8202D) else Color(0x5532508C), 0.1f, 0.2f), Triple(Color(0x552A46A0), 0.9f, 0.1f), dim = late)
             // Swipe sideways for your other teams.
             .pointerInput(teams.size) {
                 var travelled = 0f
@@ -1091,6 +1185,7 @@ private fun PhoneTeamsBanner(vm: AppViewModel, soonOnly: Boolean, top: Dp) {
 
 @Composable
 private fun PhoneHolidayBanner(vm: AppViewModel, top: Dp) {
+    val late = rememberLateNight()
     val holiday = Holiday.now() ?: Holiday.CHRISTMAS
     val picks = vm.holidayPicks?.takeIf { it.holiday == holiday }
     val films = picks?.films.orEmpty()
@@ -1098,12 +1193,9 @@ private fun PhoneHolidayBanner(vm: AppViewModel, top: Dp) {
     Box(
         Modifier
             .fillMaxWidth()
-            .bannerGlow(
-                *(if (christmas) arrayOf(Triple(Color(0x8CD63C28), 0.8f, 0f), Triple(Color(0x592A7850), 0.1f, 0.1f))
-                else arrayOf(Triple(Color(0x80E0701E), 0.8f, 0f), Triple(Color(0x596A2C9A), 0.1f, 0.1f)))
-            )
+            .bannerGlow(*festiveGlows(christmas, wide = false), dim = late)
     ) {
-        if (christmas) Snowfall(Modifier.matchParentSize())
+        if (christmas) Snowfall(Modifier.matchParentSize(), moving = !late)
         Column(
             Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = top, bottom = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -1156,57 +1248,6 @@ private fun WeatherNotes(weather: WeatherNow?, style: TextStyle, center: Boolean
             if (sun != null) Text("  ·  ", style = style, color = Ember.Dim)
         }
         if (sun != null) Text(sun, style = style, color = Ember.Text.copy(alpha = 0.8f), maxLines = 1, textAlign = if (center) TextAlign.Center else TextAlign.Start)
-    }
-}
-
-/**
- * The top news story, changing every few seconds, in a slim glass pill. OK (or a tap) finds a
- * news channel to watch. Not shown on kids profiles, or when headlines are turned off.
- */
-@Composable
-private fun HeadlinePill(vm: AppViewModel, onCustomise: (() -> Unit)?) {
-    val list = vm.headlines
-    if (!vm.headlinesOn || vm.profile?.kids == true || list.isEmpty()) return
-    val isTv = LocalIsTv.current
-    var index by remember { mutableStateOf(0) }
-    var focused by remember { mutableStateOf(false) }
-    LaunchedEffect(list, focused) {
-        // Holds still while it's highlighted, so it can be read.
-        while (!focused) {
-            delay(8_000)
-            index = (index + 1) % list.size
-        }
-    }
-    val headline = list[index % list.size]
-    Spacer(Modifier.height(if (isTv) 12.dp else 10.dp))
-    FocusBox(
-        modifier = Modifier.then(if (isTv) Modifier.widthIn(max = 560.dp) else Modifier.fillMaxWidth()).height(if (isTv) 38.dp else 40.dp),
-        focusKey = "home:banner:news",
-        shape = RoundedCornerShape(19.dp),
-        focusedScale = 1.03f,
-        color = Color(0x1AFFFFFF),
-        focusedColor = Color.White,
-        onFocusChange = { focused = it },
-        onClick = { vm.watchNews() },
-        onLongClick = onCustomise,
-    ) { f ->
-        Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "NEWS",
-                style = Txt.Caption.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp),
-                color = if (f) Color.Black else Ember.Live,
-            )
-            Spacer(Modifier.width(10.dp))
-            Crossfade(targetState = headline, label = "headline", modifier = Modifier.weight(1f)) { h ->
-                Text(
-                    h,
-                    style = Txt.Label.copy(fontWeight = FontWeight.Medium),
-                    color = if (f) Color.Black else Ember.Text.copy(alpha = 0.9f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
     }
 }
 
@@ -1388,6 +1429,7 @@ private fun TvResumeBanner(vm: AppViewModel, repo: Repository, onCustomise: () -
             )
         )
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(0f to Ember.Bg.copy(alpha = 0.55f), 0.25f to Color.Transparent, 0.62f to Color.Transparent, 1f to Ember.Bg)))
+        if (rememberLateNight()) Box(Modifier.matchParentSize().background(Color(0x59000000)))
         Column(Modifier.align(Alignment.BottomStart).padding(start = 48.dp, top = TV_MENU_SPACE + 30.dp, bottom = 22.dp).width(560.dp)) {
             Text("PICK UP WHERE YOU LEFT OFF", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim)
             Spacer(Modifier.height(6.dp))
@@ -1495,6 +1537,30 @@ fun BannerPickerDialog(vm: AppViewModel, onDone: () -> Unit) {
                         onDone()
                     }
                 }
+                Spacer(Modifier.height(6.dp))
+                SheetSection("Automatic and Take turns can show")
+                val off: @Composable (Boolean) -> Unit = { dark ->
+                    Text("Off", style = Txt.Label, color = if (dark) Color(0xFF55555C) else Ember.Faint)
+                }
+                for ((id, name, about) in listOf(
+                    Triple("teams", "Your teams", "When they're playing, or about to"),
+                    Triple("resume", "Pick up where you left off", "What you were last watching"),
+                    Triple("holiday", "Holiday films", "Christmas from mid-November, Halloween in October"),
+                )) {
+                    val on = id in vm.autoBanners
+                    SheetOption(
+                        name,
+                        focusKey = "banner:auto:$id",
+                        subtitle = about,
+                        trailing = if (on) tick else off,
+                    ) { vm.toggleAutoBanner(id) }
+                }
+                Text(
+                    "The clock and weather show whenever there's nothing else.",
+                    style = Txt.Caption,
+                    color = Ember.Dim,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
+                )
                 Spacer(Modifier.height(6.dp))
                 SheetSection("Weather")
                 val chevron: @Composable (Boolean) -> Unit = { dark ->

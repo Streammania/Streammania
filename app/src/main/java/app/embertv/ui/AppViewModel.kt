@@ -843,6 +843,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         homeHidden = prefs.homeHidden
         // Before there was a choice, the banner could only be on or off.
         bannerMode = prefs.bannerMode.ifBlank { if (FEATURED in homeHidden) BannerModes.OFF else BannerModes.AUTO }
+        autoBanners = prefs.autoBanners
         Ember.backdrop = BACKDROPS.firstOrNull { it.id == prefs.backdrop } ?: BACKDROPS[0]
         Txt.scale = prefs.textScale.coerceIn(1f, 1.25f)
         HintsSetting.show = prefs.showHints
@@ -1574,6 +1575,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         prefs.bannerMode = mode
     }
 
+    /** What Automatic and Take turns may show besides the clock ("teams", "resume", "holiday"). */
+    var autoBanners by mutableStateOf(setOf("teams", "resume", "holiday"))
+        private set
+
+    fun toggleAutoBanner(id: String) {
+        autoBanners = if (id in autoBanners) autoBanners - id else autoBanners + id
+        prefs.autoBanners = autoBanners
+    }
+
     /** The town for the weather on Home: this TV's, not a profile's. Null until one is chosen. */
     var weatherPlace by mutableStateOf(WeatherPlace.fromJson(prefs.weatherPlace))
         private set
@@ -1661,56 +1671,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun searchHoliday(holiday: Holiday) {
         tab = Tabs.SEARCH
         searchQuery = holiday.search
-    }
-
-    // ---- News headlines, under the clock on Home ----
-
-    var headlinesOn by mutableStateOf(prefs.headlines)
-        private set
-
-    fun toggleHeadlines() {
-        headlinesOn = !headlinesOn
-        prefs.headlines = headlinesOn
-    }
-
-    /** The latest top stories, top first; empty until fetched (and always on kids profiles). */
-    var headlines by mutableStateOf<List<String>>(emptyList())
-        private set
-    private var headlinesAt = 0L
-    private var headlinesJob: kotlinx.coroutines.Job? = null
-
-    /** Fetches the headlines if they're more than 15 minutes old. */
-    fun refreshHeadlines() {
-        if (!headlinesOn || profile?.kids == true) return
-        if (headlines.isNotEmpty() && System.currentTimeMillis() - headlinesAt < 15 * 60_000L) return
-        if (headlinesJob?.isActive == true) return
-        headlinesJob = viewModelScope.launch {
-            val found = app.embertv.data.News.headlines()
-            if (!found.isNullOrEmpty()) {
-                headlines = found
-                headlinesAt = System.currentTimeMillis()
-            }
-        }
-    }
-
-    /** Finds a news channel on the provider (BBC News, then Sky News...) and plays it. */
-    fun watchNews() {
-        val r = repo ?: return
-        viewModelScope.launch {
-            val found = try {
-                var hit: Channel? = null
-                for (q in listOf("BBC News", "Sky News", "GB News", "CNN")) {
-                    hit = r.searchChannels(q, 5).firstOrNull()
-                    if (hit != null) break
-                }
-                hit
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                null
-            }
-            if (found != null) push(Screen.PlayLive(listOf(found), 0)) else notify("Couldn't find a news channel")
-        }
     }
 
     // ---- League tables, for the teams banner ----
