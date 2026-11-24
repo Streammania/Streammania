@@ -147,37 +147,6 @@ internal suspend fun loadHomeFeed(repo: Repository): HomeFeed = kotlinx.coroutin
     HomeFeed(heroes, liveRow, movieRows, seriesRows, recent, trending)
 }
 
-/**
- * The films for the big banner at the top of Home: this week's trending films that your provider
- * has (with TMDB), then its new releases. Only if neither turns anything up, the old way: like
- * what you've been watching, then well-rated recent additions. Nothing you've already watched, and
- * only ones with artwork. Empty when the banner is turned off.
- */
-private fun featuredFor(vm: AppViewModel, feed: HomeFeed): List<Movie> {
-    if (FEATURED in vm.homeHidden) return emptyList()
-    fun rating(m: Movie) = m.rating.toFloatOrNull() ?: 0f
-    fun ok(m: Movie) = m.poster.isNotBlank() && !vm.movieWatched(m)
-    val picked = LinkedHashMap<Int, Movie>()
-    vm.featured?.movies.orEmpty().filter(::ok).forEach { if (picked.size < 8) picked.putIfAbsent(it.streamId, it) }
-    if (picked.size >= 3) return picked.values.toList()
-    vm.homeExtras?.because.orEmpty().filterIsInstance<Movie>().filter(::ok).take(3).forEach { if (picked.size < 6) picked.putIfAbsent(it.streamId, it) }
-    val newest = feed.recent.filterIsInstance<Movie>().filter(::ok)
-    newest.filter { rating(it) >= 6.5f }.sortedByDescending { rating(it) }.take(6).forEach { if (picked.size < 6) picked.putIfAbsent(it.streamId, it) }
-    if (picked.size < 3) newest.take(6).forEach { if (picked.size < 6) picked.putIfAbsent(it.streamId, it) }
-    if (picked.isEmpty()) feed.heroes.filter(::ok).forEach { if (picked.size < 6) picked.putIfAbsent(it.streamId, it) }
-    return picked.values.toList()
-}
-
-/** The small label over the banner's title: why this film is there. */
-private fun featuredLabel(vm: AppViewModel, m: Movie): String {
-    val f = vm.featured
-    return when {
-        f != null && m.streamId in f.trending -> "TRENDING NOW"
-        f != null && m.streamId in f.fresh -> "NEW RELEASE"
-        else -> "FEATURED FOR YOU"
-    }
-}
-
 /** The id Arrange Home uses for the banner at the top. */
 const val FEATURED = "featured"
 
@@ -188,24 +157,12 @@ const val FEATURED = "featured"
 @Composable
 private fun rememberHomeFeed(vm: AppViewModel, repo: Repository): androidx.compose.runtime.State<LoadResult<HomeFeed>> {
     LaunchedEffect(repo, vm.reloadToken) { vm.ensureHome() }
-    // The banner's trending and new films, picked alongside.
-    LaunchedEffect(repo, vm.reloadToken, vm.tmdbKey, vm.profile?.id) { vm.ensureFeatured() }
+    // TMDB's trending films, only for Trending Now when the provider has no Trending group of its own.
+    val noTrendingGroup = (vm.homeFeed as? LoadResult.Ok)?.value?.trending?.isEmpty() == true
+    LaunchedEffect(repo, vm.reloadToken, vm.tmdbKey, vm.profile?.id, noTrendingGroup) { if (noTrendingGroup) vm.ensureFeatured() }
     // New Episodes and Because You Watched, worked out alongside.
     LaunchedEffect(repo, vm.reloadToken, vm.vodVersion, vm.lastWatched) { vm.ensureHomeExtras() }
     return androidx.compose.runtime.rememberUpdatedState(vm.homeFeed)
-}
-
-/** Moves through the featured titles every few seconds unless [paused]. */
-@Composable
-private fun rememberHeroIndex(count: Int, paused: Boolean): Pair<Int, (Int) -> Unit> {
-    var index by remember { mutableIntStateOf(0) }
-    LaunchedEffect(count, paused, index) {
-        if (count <= 1 || paused) return@LaunchedEffect
-        delay(8_000)
-        index = (index + 1) % count
-    }
-    val safe = if (count == 0) 0 else index.coerceIn(0, count - 1)
-    return safe to { i: Int -> index = if (count == 0) 0 else ((i % count) + count) % count }
 }
 
 private fun minutesLeft(e: HistoryEntry): String? {
@@ -636,21 +593,6 @@ private fun HomeRow(title: String, edge: Dp, content: @Composable () -> Unit) {
     }
 }
 
-@Composable
-private fun BoxScope.HeroDots(count: Int, index: Int, modifier: Modifier = Modifier) {
-    if (count <= 1) return
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (i in 0 until count) {
-            Box(
-                Modifier
-                    .size(if (i == index) 18.dp else 6.dp, 6.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(if (i == index) Color.White else Color(0x66FFFFFF))
-            )
-        }
-    }
-}
-
 // ---------------- TV ----------------
 
 /** The height of the menu that floats over the top of Home on a TV. */
@@ -708,130 +650,9 @@ fun HomeSection(vm: AppViewModel) {
                     .fillMaxSize()
                     .then(if (entry != null) Modifier.focusRequester(entry.list).focusGroup() else Modifier),
             ) {
-                val heroes = featuredFor(vm, feed)
-                if (heroes.isNotEmpty()) {
-                    item(key = "hero") { TvHero(vm, repo, heroes) }
-                } else {
-                    item(key = "top") { Spacer(Modifier.height(TV_MENU_SPACE)) }
-                }
+                // The banner the profile chose: clock and weather, your teams, the holiday, or none.
+                item(key = "banner") { TvTopBanner(vm, repo) }
                 homeRows(vm, feed, edge = 48.dp, posterWidth = 132.dp, continueWidth = 300.dp, gap = 22.dp) { arranging = true }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TvHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
-    var focused by remember { mutableStateOf(false) }
-    val heroScope = androidx.compose.runtime.rememberCoroutineScope()
-    val (index, setIndex) = rememberHeroIndex(heroes.size, paused = focused)
-    val movie = heroes[index]
-    val info = (rememberLoad(movie.streamId) { repo.movieInfo(movie.streamId) }.value as? LoadResult.Ok)?.value
-    val resume = vm.moviePosition(movie)
-
-    val isFav = vm.isFavourite(ContentType.MOVIE, movie.streamId)
-    // Which button has focus, so ◀ on the first and ▶ on the last can page through the films.
-    var onFirst by remember { mutableStateOf(false) }
-    var onLast by remember { mutableStateOf(false) }
-
-    // Short enough that the top of the first row shows underneath, so it's clear there's more below,
-    // but it grows to fit its words (bigger text sizes, long titles) so nothing is cut off at the top.
-    Box(Modifier.fillMaxWidth().heightIn(min = 310.dp + TV_MENU_SPACE)) {
-        Crossfade(targetState = movie, label = "hero", modifier = Modifier.matchParentSize()) { m ->
-            val art = if (m.streamId == movie.streamId) info?.backdrop?.takeIf { it.isNotBlank() } ?: m.poster else m.poster
-            Box(Modifier.fillMaxSize()) {
-                NetImage(art, Modifier.fillMaxSize())
-            }
-        }
-        // Apple TV style: the picture fills the width, fading softly into the page on the left and below.
-        Box(
-            Modifier.matchParentSize().background(
-                Brush.horizontalGradient(0f to Ember.Bg.copy(alpha = 0.92f), 0.35f to Ember.Bg.copy(alpha = 0.55f), 0.65f to Color.Transparent)
-            )
-        )
-        Box(Modifier.matchParentSize().background(Brush.verticalGradient(0f to Ember.Bg.copy(alpha = 0.55f), 0.25f to Color.Transparent, 0.62f to Color.Transparent, 1f to Ember.Bg)))
-        Column(
-            Modifier.align(Alignment.BottomStart).padding(start = 48.dp, top = TV_MENU_SPACE + 30.dp, bottom = 20.dp).width(540.dp)
-        ) {
-            Text(featuredLabel(vm, movie), style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim)
-            Spacer(Modifier.height(6.dp))
-            Text(app.embertv.data.Versions.cleanTitle(movie.name), style = Txt.LargeTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(6.dp))
-            val meta = listOfNotNull(
-                info?.year?.takeIf { it.isNotBlank() },
-                info?.genre?.takeIf { it.isNotBlank() },
-                ratingLabel(info?.rating ?: movie.rating),
-            ).joinToString("   ·   ")
-            if (meta.isNotEmpty()) Text(meta, style = Txt.Label, color = Ember.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val plot = info?.plot
-            if (!plot.isNullOrBlank()) {
-                Spacer(Modifier.height(8.dp))
-                Text(plot, style = Txt.Body, color = Ember.Text.copy(alpha = 0.85f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-            Spacer(Modifier.height(18.dp))
-            Row(
-                Modifier
-                    .onFocusChanged {
-                        focused = it.hasFocus
-                        // Back on the banner: the page slides back to the top, as on Apple TV.
-                        if (it.hasFocus) heroScope.launch { runCatching { vm.home.list("tv").animateScrollToItem(0) } }
-                    }
-                    .onPreviewKeyEvent { ev ->
-                        if (ev.type != androidx.compose.ui.input.key.KeyEventType.KeyDown || heroes.size <= 1) return@onPreviewKeyEvent false
-                        when (ev.nativeKeyEvent.keyCode) {
-                            android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> if (onLast) { setIndex(index + 1); true } else false
-                            android.view.KeyEvent.KEYCODE_DPAD_LEFT -> if (onFirst) { setIndex(index - 1); true } else false
-                            else -> false
-                        }
-                    },
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.onFocusChanged { onFirst = it.hasFocus }) {
-                    TvButton(
-                        if (resume > 0) "Resume" else "Play",
-                        icon = "▶",
-                        focusKey = "home:hero:play",
-                        requester = LocalHomeEntry.current?.hero,
-                        onClick = { vm.playMovie(movie, fromStart = resume <= 0) },
-                    )
-                }
-                TvButton("More info", focusKey = "home:hero:info", onClick = { vm.push(Screen.MovieDetail(movie)) })
-                // Add to My List, as a round glass button.
-                Box(Modifier.onFocusChanged { onLast = it.hasFocus }) {
-                    FocusBox(
-                        modifier = Modifier.size(50.dp),
-                        focusKey = "home:hero:fav",
-                        shape = CircleShape,
-                        focusedScale = 1.08f,
-                        color = Color(0x26FFFFFF),
-                        focusedColor = Color.White,
-                        onClick = { vm.toggleFavourite(vm.favouriteOf(movie)) },
-                    ) { f ->
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            androidx.compose.material3.Icon(
-                                if (isFav) EmberIcons.StarFilled else EmberIcons.Star,
-                                contentDescription = if (isFav) "In My List" else "Add to My List",
-                                tint = if (f) Color.Black else Ember.Text,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        // Where you are among the featured films, in a small frosted pill.
-        if (heroes.size > 1) {
-            Box(
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 48.dp, bottom = 40.dp)
-                    .glassSurface(RoundedCornerShape(12.dp), Color(0x33000000))
-                    .padding(horizontal = 10.dp, vertical = 8.dp)
-            ) {
-                Box(Modifier.size(width = (heroes.size * 12 + 12).dp, height = 6.dp)) {
-                    HeroDots(heroes.size, index, Modifier.align(Alignment.CenterStart))
-                }
             }
         }
     }
@@ -861,109 +682,9 @@ fun PhoneHomeTab(vm: AppViewModel) {
                 contentPadding = PaddingValues(bottom = pad.calculateBottomPadding() + 8.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                val heroes = featuredFor(vm, feed)
-                if (heroes.isNotEmpty()) {
-                    item(key = "hero") { PhoneHero(vm, repo, heroes) }
-                } else {
-                    item(key = "top") { Spacer(Modifier.height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 74.dp)) }
-                }
+                item(key = "banner") { PhoneTopBanner(vm, repo) }
                 // Apple TV app sizes: big wide cards for Continue Watching, roomy posters, 20dp margins.
                 homeRows(vm, feed, edge = 20.dp, posterWidth = 118.dp, continueWidth = 270.dp, gap = 12.dp) { arranging = true }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PhoneHero(vm: AppViewModel, repo: Repository, heroes: List<Movie>) {
-    val (index, setIndex) = rememberHeroIndex(heroes.size, paused = false)
-    val latestIndex by rememberUpdatedState(index)
-    val latestSetIndex by rememberUpdatedState(setIndex)
-    val movie = heroes[index]
-    val info = (rememberLoad(movie.streamId) { repo.movieInfo(movie.streamId) }.value as? LoadResult.Ok)?.value
-    val resume = vm.moviePosition(movie)
-    val isFav = vm.isFavourite(ContentType.MOVIE, movie.streamId)
-    val landscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .aspectRatio(if (landscape) 2.4f else 4f / 5.6f)
-            .pointerInput(heroes.size) {
-                var travelled = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { travelled = 0f },
-                    onDragEnd = {
-                        if (travelled < -60f) latestSetIndex(latestIndex + 1) else if (travelled > 60f) latestSetIndex(latestIndex - 1)
-                    },
-                    onHorizontalDrag = { change, dx ->
-                        change.consume()
-                        travelled += dx
-                    },
-                )
-            }
-    ) {
-        Crossfade(targetState = movie, label = "hero") { m ->
-            // Tall poster artwork filling the top of the page, as in Apple's TV app on iPhone.
-            // Sideways, wide artwork suits better.
-            val art = if (landscape && m.streamId == movie.streamId) info?.backdrop?.takeIf { it.isNotBlank() } ?: m.poster else m.poster.ifBlank { info?.backdrop.orEmpty() }
-            Box(Modifier.fillMaxSize()) {
-                Placeholder(m.name, Modifier.fillMaxSize(), fontSizeSp = 32)
-                NetImage(art, Modifier.fillMaxSize())
-                // Tapping the artwork opens the film, as on Apple TV.
-                Box(Modifier.fillMaxSize().pressable(onClick = { vm.push(Screen.MovieDetail(m)) }))
-            }
-        }
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(0f to Color(0x66000000), 0.18f to Color.Transparent, 0.45f to Color.Transparent, 0.78f to Ember.Bg.copy(alpha = 0.85f), 1f to Ember.Bg)
-            )
-        )
-        // Apple TV app layout: everything centred, title, details, a wide Play and a round add button, then the dots.
-        Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                featuredLabel(vm, movie),
-                style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp),
-                color = Ember.Text.copy(alpha = 0.75f),
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                app.embertv.data.Versions.cleanTitle(movie.name),
-                style = Txt.LargeTitle.copy(fontSize = (32f * Txt.scale).sp, lineHeight = (36f * Txt.scale).sp, letterSpacing = (-0.5).sp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            val meta = listOfNotNull(
-                "Film",
-                info?.genre?.takeIf { it.isNotBlank() }?.substringBefore(",")?.substringBefore("/")?.trim(),
-                info?.year?.takeIf { it.isNotBlank() },
-                ratingLabel(info?.rating ?: movie.rating),
-            ).joinToString(" · ")
-            Spacer(Modifier.height(6.dp))
-            Text(meta, style = Txt.Label.copy(fontSize = 15.sp), color = Ember.Text.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(16.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                PillButton(
-                    if (resume > 0) "Resume" else "Play",
-                    icon = EmberIcons.Play,
-                    primary = true,
-                    modifier = Modifier.width(170.dp),
-                ) { vm.playMovie(movie, fromStart = resume <= 0) }
-                IconCircleButton(
-                    if (isFav) EmberIcons.Check else EmberIcons.Plus,
-                    if (isFav) "In My List" else "Add to My List",
-                    size = 48.dp,
-                    background = Color(0x33FFFFFF),
-                    glass = true,
-                ) { vm.toggleFavourite(vm.favouriteOf(movie)) }
-            }
-            Spacer(Modifier.height(16.dp))
-            Box(Modifier.height(6.dp).width((heroes.size.coerceAtMost(8) * 12 + 12).dp)) {
-                HeroDots(heroes.size.coerceAtMost(8), index.coerceAtMost(7), Modifier.align(Alignment.Center))
             }
         }
     }
@@ -981,6 +702,7 @@ fun ArrangeHomeDialog(vm: AppViewModel, onDone: () -> Unit) {
     val names = remember { HOME_ROWS.toMap() }
     // "channels" or "mylist" while putting that row's tiles in order.
     var ordering by remember { mutableStateOf<String?>(null) }
+    var choosingBanner by remember { mutableStateOf(false) }
     androidx.compose.ui.window.Dialog(onDismissRequest = onDone) {
         DialogBackdropBlur()
         Column(
@@ -1002,19 +724,13 @@ fun ArrangeHomeDialog(vm: AppViewModel, onDone: () -> Unit) {
                     .verticalScroll(androidx.compose.foundation.rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // The big banner always sits at the top; it can only be turned on or off.
-                ArrangeRow(
-                    name = "Featured banner (picked for you)",
-                    shown = FEATURED !in vm.homeHidden,
-                    canUp = false,
-                    canDown = false,
-                    first = true,
-                    id = FEATURED,
-                    onToggle = { vm.toggleHomeRow(FEATURED) },
-                    onUp = {},
-                    onDown = {},
-                    arrows = false,
-                )
+                // The big banner always sits at the top: choose what it shows.
+                SheetOption(
+                    "Top of Home",
+                    focusKey = "arrange:banner",
+                    subtitle = BannerModes.name(vm.bannerMode),
+                    trailing = { dark -> androidx.compose.material3.Icon(EmberIcons.ChevronRight, contentDescription = null, tint = if (dark) Color.Black else Ember.Dim, modifier = Modifier.size(18.dp)) },
+                ) { choosingBanner = true }
                 order.forEachIndexed { i, id ->
                     // Keyed by row, so focus stays on the arrow you pressed as the row moves.
                     androidx.compose.runtime.key(id) {
@@ -1056,6 +772,7 @@ fun ArrangeHomeDialog(vm: AppViewModel, onDone: () -> Unit) {
     }
     val t = ordering
     if (t != null) TileOrderDialog(vm, channels = t == "channels") { ordering = null }
+    if (choosingBanner) BannerPickerDialog(vm) { choosingBanner = false }
 }
 
 @Composable

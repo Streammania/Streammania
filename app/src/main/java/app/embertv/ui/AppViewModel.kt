@@ -62,6 +62,8 @@ import app.embertv.data.favouriteKey
 import app.embertv.data.normalizeServer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import app.embertv.data.WeatherNow
+import app.embertv.data.WeatherPlace
 import kotlinx.coroutines.async
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitAll
@@ -839,6 +841,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         lastWatched = prefs.lastWatched
         homeOrder = prefs.homeOrder
         homeHidden = prefs.homeHidden
+        // Before there was a choice, the banner could only be on or off.
+        bannerMode = prefs.bannerMode.ifBlank { if (FEATURED in homeHidden) BannerModes.OFF else BannerModes.AUTO }
         Ember.backdrop = BACKDROPS.firstOrNull { it.id == prefs.backdrop } ?: BACKDROPS[0]
         Txt.scale = prefs.textScale.coerceIn(1f, 1.25f)
         HintsSetting.show = prefs.showHints
@@ -1557,6 +1561,106 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (next.size > 400) next = next.entries.sortedByDescending { it.value }.take(400).associate { it.key to it.value }
         seriesSeen = next
         prefs.seriesSeen = next
+    }
+
+    // ---- The banner at the top of Home: your choice ----
+
+    /** What the banner at the top of Home shows, one of [BannerModes]. Each profile chooses its own. */
+    var bannerMode by mutableStateOf(BannerModes.AUTO)
+        private set
+
+    fun chooseBanner(mode: String) {
+        bannerMode = mode
+        prefs.bannerMode = mode
+    }
+
+    /** The town for the weather on Home: this TV's, not a profile's. Null until one is chosen. */
+    var weatherPlace by mutableStateOf(WeatherPlace.fromJson(prefs.weatherPlace))
+        private set
+
+    /** The latest weather for [weatherPlace], or null while it loads (or couldn't be fetched). */
+    var weather by mutableStateOf<WeatherNow?>(null)
+        private set
+    private var weatherJob: kotlinx.coroutines.Job? = null
+
+    fun chooseWeatherPlace(place: WeatherPlace?) {
+        weatherPlace = place
+        prefs.weatherPlace = place?.toJson().orEmpty()
+        weather = null
+        weatherJob?.cancel()
+        refreshWeather()
+    }
+
+    /** Fetches the weather if it's more than 20 minutes old. Quietly keeps the last one if it fails. */
+    fun refreshWeather() {
+        val place = weatherPlace ?: return
+        val last = weather
+        if (last != null && System.currentTimeMillis() - last.fetchedAt < 20 * 60_000L) return
+        if (weatherJob?.isActive == true) return
+        weatherJob = viewModelScope.launch {
+            // Fahrenheit where that's what people use; Celsius everywhere else.
+            val fahrenheit = java.util.Locale.getDefault().country in setOf("US", "LR", "BS", "BZ", "KY", "PW")
+            val now = app.embertv.data.Weather.forecast(place, fahrenheit)
+            if (now != null && weatherPlace == place) weather = now
+        }
+    }
+
+    /** Films for the holiday banner: Christmas, or Halloween in October. */
+    class HolidayPicks(val holiday: Holiday, val films: List<Movie>, val categoryId: String?)
+
+    var holidayPicks by mutableStateOf<HolidayPicks?>(null)
+        private set
+    private var holidayKey: Any? = null
+
+    /**
+     * Gathers the holiday's films: the provider's own group for it if there is one (Christmas
+     * Movies, Xmas, Festive...), otherwise films with the holiday in their names from the lists
+     * already loaded. Gently, in the background, and never while something plays.
+     */
+    fun ensureHoliday() {
+        val r = repo ?: return
+        val holiday = Holiday.now() ?: run {
+            holidayPicks = null
+            return
+        }
+        val key = listOf(r, profile?.id, reloadToken, holiday)
+        if (holidayKey == key) return
+        holidayKey = key
+        if (holidayPicks?.holiday != holiday) holidayPicks = null
+        viewModelScope.launch {
+            delay(1_000)
+            waitForQuiet()
+            val picks = try {
+                val cats = r.movieCategories().filter { holiday.groupWords.containsMatchIn(it.name) }.take(2)
+                val fromGroups = cats.flatMap { c ->
+                    try {
+                        r.movies(c.id)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        emptyList()
+                    }
+                }
+                kotlinx.coroutines.withContext(quietWork) {
+                    val pool = fromGroups.ifEmpty { r.loadedMovies().filter { holiday.titleWords.containsMatchIn(it.name) } }
+                    val keys = HashSet<String>()
+                    pool.filter { it.poster.isNotBlank() && keys.add(app.embertv.data.Versions.key(it.name)) }
+                }.let { HolidayPicks(holiday, it, cats.singleOrNull()?.id ?: cats.firstOrNull()?.id) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            } catch (e: OutOfMemoryError) {
+                null
+            }
+            if (repo === r && holidayKey == key) holidayPicks = picks ?: HolidayPicks(holiday, emptyList(), null)
+        }
+    }
+
+    /** Searches everything for the holiday (when the provider has no group for it). */
+    fun searchHoliday(holiday: Holiday) {
+        tab = Tabs.SEARCH
+        searchQuery = holiday.search
     }
 
     // ---- The banner at the top of Home: trending and new films ----

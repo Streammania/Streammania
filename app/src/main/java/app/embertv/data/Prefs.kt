@@ -164,7 +164,7 @@ class Prefs(context: Context) {
         val e = sp.edit()
         for (key in sp.all.keys) {
             val belongs = if (id == MAIN_PROFILE) {
-                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next", "kickoff_reminders", "finished_at", "match_reminders", "home_artwork", "recent_searches", "featured_cache") ||
+                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next", "kickoff_reminders", "finished_at", "match_reminders", "home_artwork", "recent_searches", "featured_cache", "banner_mode") ||
                     key.startsWith("pos_") || key.startsWith("last_ep_")
             } else {
                 key.startsWith("p_${id}_")
@@ -615,6 +615,20 @@ class Prefs(context: Context) {
             sp.edit().putString(pk("recent_searches"), a.toString()).apply()
         }
 
+    /** What the banner at the top of Home shows ("auto", "clock", "teams", "holiday", "off"); empty until chosen. */
+    var bannerMode: String
+        get() = sp.getString(pk("banner_mode"), "") ?: ""
+        set(value) {
+            sp.edit().putString(pk("banner_mode"), value).apply()
+        }
+
+    /** The town for the weather on Home, as [WeatherPlace] JSON; empty for none. This TV's, not a profile's. */
+    var weatherPlace: String
+        get() = sp.getString("weather_place", "") ?: ""
+        set(value) {
+            sp.edit().putString("weather_place", value).apply()
+        }
+
     /**
      * The films last picked for Home's banner (trending and new releases), so it opens with them
      * straight away while fresh picks are worked out. Only a cache: it never leaves this device.
@@ -837,7 +851,7 @@ class Prefs(context: Context) {
 }
 
 /** Kept on each device: sign-in, pairings and how this screen is held. */
-private val DEVICE_ONLY = setOf("server", "user", "pass", "paired_tvs", "tv_tokens", "screen_direction", "last_profile", "match_frame_rate", "hdr_hint", "picture_mode", "external_player", "last_crash", "last_server", "last_user", "update_snoozed_code", "update_snoozed_until")
+private val DEVICE_ONLY = setOf("server", "user", "pass", "paired_tvs", "tv_tokens", "screen_direction", "last_profile", "match_frame_rate", "hdr_hint", "picture_mode", "external_player", "last_crash", "last_server", "last_user", "update_snoozed_code", "update_snoozed_until", "weather_place")
 
 /** Rows Home leaves off until switched on: Home starts with six rows instead of eleven. */
 val DEFAULT_HOME_HIDDEN = setOf("recent-channels", "fav-channels", "live", "movies", "series")

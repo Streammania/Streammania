@@ -466,6 +466,8 @@ fun SettingsSection(vm: AppViewModel) {
     var linkingTvs by remember { mutableStateOf(false) }
     var choosingPlayer by remember { mutableStateOf(false) }
     var editingTmdb by remember { mutableStateOf(false) }
+    var choosingBanner by remember { mutableStateOf(false) }
+    var settingWeather by remember { mutableStateOf(false) }
     var tmdbDraft by remember { mutableStateOf(vm.tmdbKey) }
     val kids = vm.profile?.kids == true
     val account = vm.account
@@ -518,6 +520,12 @@ fun SettingsSection(vm: AppViewModel) {
                         focusKey = "set:arrange",
                     ) { arrangingHome = true }
                 }
+                SettingRow(
+                    "Top of Home",
+                    BannerModes.name(vm.bannerMode),
+                    "Clock and weather, your teams, or holiday films",
+                    focusKey = "set:banner",
+                ) { choosingBanner = true }
                 SettingRow("Background", Ember.backdrop.name, "The colour behind everything", focusKey = "set:backdrop") { pickingBackdrop = true }
                 if (isTv) {
                     SettingRow(
@@ -676,6 +684,12 @@ fun SettingsSection(vm: AppViewModel) {
 
             // ---- This TV / phone & app ----
             SettingsGroup(if (isTv) "This TV & app" else "This phone & app") {
+                SettingRow(
+                    "Weather",
+                    vm.weatherPlace?.name ?: "Off",
+                    "Your town, for the clock and weather at the top of Home",
+                    focusKey = "set:weather",
+                ) { settingWeather = true }
                 if (!kids) SettingRow(
                     "Film details (TMDB)",
                     if (vm.tmdbKey.isBlank()) "Off" else "Connected",
@@ -846,6 +860,8 @@ fun SettingsSection(vm: AppViewModel) {
 
     if (pickingTeams) TeamPicker(vm) { pickingTeams = false }
     if (linkingTvs) LinkedTvsDialog(vm) { linkingTvs = false }
+    if (choosingBanner) BannerPickerDialog(vm) { choosingBanner = false }
+    if (settingWeather) WeatherPlaceDialog(vm) { settingWeather = false }
     if (editingTmdb) {
         TextEntryDialog(
             title = "TMDB API key or Read Access Token (themoviedb.org → Settings → API). Leave empty to turn off.",

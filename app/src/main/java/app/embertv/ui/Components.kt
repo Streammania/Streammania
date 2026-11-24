@@ -496,6 +496,7 @@ fun TvButton(
     autoFocus: Boolean = false,
     requester: FocusRequester? = null,
     horizontalPadding: Dp = 26.dp,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     FocusBox(
@@ -508,6 +509,7 @@ fun TvButton(
         autoFocus = autoFocus,
         requester = requester,
         onClick = onClick,
+        onLongClick = onLongClick,
     ) { focused ->
         Row(
             Modifier.fillMaxHeight().padding(horizontal = horizontalPadding),
