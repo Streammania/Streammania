@@ -366,6 +366,10 @@ private fun ProfileEditor(vm: AppViewModel, initial: Profile?, onDone: () -> Uni
     var pin by remember { mutableStateOf<String?>(null) }
     var settingPin by remember { mutableStateOf(false) }
     var choosingCategories by remember { mutableStateOf(false) }
+    // A kids profile's bedtime and daily limit (saved with the rest).
+    val rule = initial?.let { vm.kidsRules[it.id] }
+    var bedtime by remember { mutableStateOf(rule?.bedtime) }
+    var dailyLimit by remember { mutableStateOf(rule?.limitMinutes) }
     val newPin = pin
     val locked = if (newPin == null) initial?.locked == true else newPin.isNotEmpty()
     val preview = Profile(initial?.id ?: "new", name.ifBlank { "?" }, color)
@@ -375,6 +379,7 @@ private fun ProfileEditor(vm: AppViewModel, initial: Profile?, onDone: () -> Uni
             vm.addProfile(name, color, kids, pin?.takeIf { it.isNotEmpty() })
         } else {
             vm.updateProfile(initial.copy(name = name, color = color, kids = kids), pin)
+            vm.setKidsRule(initial.id, if (kids) app.embertv.data.KidsRule(bedtime, dailyLimit) else app.embertv.data.KidsRule(null, null))
         }
         onDone()
     }
@@ -452,6 +457,18 @@ private fun ProfileEditor(vm: AppViewModel, initial: Profile?, onDone: () -> Uni
                 OptionRow("Categories", "Choose", "What this profile can watch", focusKey = "profile:cats") {
                     choosingCategories = true
                 }
+                OptionRow(
+                    "Bedtime",
+                    bedtimeLabel(bedtime),
+                    "Watching stops at this time until 6am",
+                    focusKey = "profile:bedtime",
+                ) { bedtime = nextOf(BEDTIMES, bedtime) }
+                OptionRow(
+                    "Daily limit",
+                    dailyLimit?.let { minutesLabel(it) } ?: "Off",
+                    "How long this profile can watch each day",
+                    focusKey = "profile:limit",
+                ) { dailyLimit = nextOf(DAILY_LIMITS, dailyLimit) }
             } else if (kids) {
                 Text(
                     "Child-friendly categories are picked for you when you save. You can change them afterwards.",

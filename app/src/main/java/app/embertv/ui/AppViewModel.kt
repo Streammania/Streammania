@@ -1663,6 +1663,175 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         searchQuery = holiday.search
     }
 
+    // ---- News headlines, under the clock on Home ----
+
+    var headlinesOn by mutableStateOf(prefs.headlines)
+        private set
+
+    fun toggleHeadlines() {
+        headlinesOn = !headlinesOn
+        prefs.headlines = headlinesOn
+    }
+
+    /** The latest top stories, top first; empty until fetched (and always on kids profiles). */
+    var headlines by mutableStateOf<List<String>>(emptyList())
+        private set
+    private var headlinesAt = 0L
+    private var headlinesJob: kotlinx.coroutines.Job? = null
+
+    /** Fetches the headlines if they're more than 15 minutes old. */
+    fun refreshHeadlines() {
+        if (!headlinesOn || profile?.kids == true) return
+        if (headlines.isNotEmpty() && System.currentTimeMillis() - headlinesAt < 15 * 60_000L) return
+        if (headlinesJob?.isActive == true) return
+        headlinesJob = viewModelScope.launch {
+            val found = app.embertv.data.News.headlines()
+            if (!found.isNullOrEmpty()) {
+                headlines = found
+                headlinesAt = System.currentTimeMillis()
+            }
+        }
+    }
+
+    /** Finds a news channel on the provider (BBC News, then Sky News...) and plays it. */
+    fun watchNews() {
+        val r = repo ?: return
+        viewModelScope.launch {
+            val found = try {
+                var hit: Channel? = null
+                for (q in listOf("BBC News", "Sky News", "GB News", "CNN")) {
+                    hit = r.searchChannels(q, 5).firstOrNull()
+                    if (hit != null) break
+                }
+                hit
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            if (found != null) push(Screen.PlayLive(listOf(found), 0)) else notify("Couldn't find a news channel")
+        }
+    }
+
+    // ---- League tables, for the teams banner ----
+
+    /** League tables by league code (some leagues have several groups). */
+    val leagueTables = androidx.compose.runtime.mutableStateMapOf<String, List<List<app.embertv.data.TableRow>>>()
+    private val leagueTableAt = HashMap<String, Long>()
+
+    /** Fetches [code]'s table if it's more than half an hour old. */
+    fun ensureLeagueTable(code: String) {
+        if (code.isBlank()) return
+        val now = System.currentTimeMillis()
+        if (now - (leagueTableAt[code] ?: 0L) < 30 * 60_000L) return
+        leagueTableAt[code] = now
+        viewModelScope.launch {
+            val tables = try {
+                app.embertv.data.ScoresClient.tables(code)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emptyList()
+            }
+            // If it didn't come, try again in five minutes rather than half an hour.
+            if (tables.isNotEmpty()) leagueTables[code] = tables else leagueTableAt[code] = now - 25 * 60_000L
+        }
+    }
+
+    // ---- Kids profiles: bedtime and a daily limit ----
+
+    var kidsRules by mutableStateOf(prefs.kidsRules)
+        private set
+
+    fun setKidsRule(profileId: String, rule: app.embertv.data.KidsRule) {
+        kidsRules = if (rule.bedtime == null && rule.limitMinutes == null) kidsRules - profileId else kidsRules + (profileId to rule)
+        prefs.kidsRules = kidsRules
+        checkBedtime()
+    }
+
+    enum class Bedtime { BEDTIME, LIMIT }
+
+    /** Why the kids profile has to stop for now, or null while it's fine to watch. */
+    var bedtimeLock by mutableStateOf<Bedtime?>(null)
+        private set
+    private var grownUpUntil = 0L
+    private var grownUpFor: String? = null
+
+    private fun today(): String = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.UK).format(java.util.Date())
+
+    /** Minutes this profile has spent watching today. */
+    fun watchedMinutesToday(): Int {
+        val saved = prefs.watchToday
+        return if (saved.substringBefore(':') == today()) saved.substringAfter(':').toIntOrNull() ?: 0 else 0
+    }
+
+    /** Checks the kids profile's bedtime and daily limit; at either, playing stops and the bedtime card shows. */
+    fun checkBedtime() {
+        val p = profile
+        if (p == null || !p.kids || pickingProfile || repo == null) {
+            bedtimeLock = null
+            return
+        }
+        if (grownUpFor == p.id && System.currentTimeMillis() < grownUpUntil) {
+            bedtimeLock = null
+            return
+        }
+        val rule = kidsRules[p.id]
+        if (rule == null) {
+            bedtimeLock = null
+            return
+        }
+        val c = java.util.Calendar.getInstance()
+        val minutes = c.get(java.util.Calendar.HOUR_OF_DAY) * 60 + c.get(java.util.Calendar.MINUTE)
+        val bed = rule.bedtime
+        // From bedtime until six in the morning.
+        val asleep = bed != null && (minutes >= bed || minutes < 6 * 60)
+        val limit = rule.limitMinutes
+        val over = limit != null && watchedMinutesToday() >= limit
+        val reason = when {
+            asleep -> Bedtime.BEDTIME
+            over -> Bedtime.LIMIT
+            else -> null
+        }
+        if (reason != null && bedtimeLock == null) {
+            while (playerOpen) pop()
+        }
+        bedtimeLock = reason
+    }
+
+    /** A grown-up allows [minutes] more, or (null) the rest of the night, or of the day for the limit. */
+    fun allowMoreTime(minutes: Int?) {
+        val p = profile ?: return
+        val now = System.currentTimeMillis()
+        grownUpFor = p.id
+        grownUpUntil = if (minutes != null) {
+            now + minutes * 60_000L
+        } else {
+            val c = java.util.Calendar.getInstance()
+            if (bedtimeLock == Bedtime.BEDTIME) {
+                // Until six tomorrow morning (or this morning, after midnight).
+                if (c.get(java.util.Calendar.HOUR_OF_DAY) >= 6) c.add(java.util.Calendar.DAY_OF_MONTH, 1)
+                c.set(java.util.Calendar.HOUR_OF_DAY, 6)
+            } else {
+                c.add(java.util.Calendar.DAY_OF_MONTH, 1)
+                c.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            }
+            c.set(java.util.Calendar.MINUTE, 0)
+            c.set(java.util.Calendar.SECOND, 0)
+            c.timeInMillis
+        }
+        bedtimeLock = null
+    }
+
+    /** Counts a minute of watching on a kids profile, then checks the limits. Runs every minute. */
+    private fun tickKidsClock() {
+        val p = profile
+        if (p != null && p.kids && appVisible && playerOpen && bedtimeLock == null) {
+            prefs.watchToday = "${today()}:${watchedMinutesToday() + 1}"
+        }
+        checkBedtime()
+    }
+
     // ---- The banner at the top of Home: trending and new films ----
 
     /**
@@ -3645,6 +3814,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         pickingProfile = profiles.size > 1 || start.locked
         val saved = prefs.account
         if (saved != null) startSession(saved, null)
+        // Kids profiles' bedtime and daily limit, checked every minute.
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(60_000L)
+                tickKidsClock()
+            }
+        }
         // Continue Watching with linked TVs (and the TV for a phone), every few minutes while on screen.
         viewModelScope.launch {
             while (true) {

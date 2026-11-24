@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -94,12 +95,14 @@ object BannerModes {
     const val CLOCK = "clock"
     const val TEAMS = "teams"
     const val HOLIDAY = "holiday"
+    const val RESUME = "resume"
     const val OFF = "off"
 
     /** Each choice with its name and a line about it, in the order the picker lists them. */
     val ALL = listOf(
-        Triple(AUTO, "Automatic", "Your teams when they're playing, holiday films in season, and the clock and weather the rest of the time"),
-        Triple(CLOCK, "Clock & weather", "A big clock, the weather where you are, and what's on now"),
+        Triple(AUTO, "Automatic", "Your teams when they're playing, what you were just watching, holiday films in season, and the clock and weather the rest of the time"),
+        Triple(CLOCK, "Clock & weather", "A big clock, the weather where you are, the news and what's on now"),
+        Triple(RESUME, "Pick up where you left off", "What you were last watching, ready to carry on"),
         Triple(TEAMS, "Your teams", "Live scores, where to watch and their next games"),
         Triple(HOLIDAY, "Holiday", "Christmas films from mid-November, Halloween in October; the clock at other times"),
         Triple(OFF, "Off", "No banner: Home starts with your rows"),
@@ -151,7 +154,18 @@ enum class Holiday(
     }
 }
 
-private enum class BannerKind { CLOCK, TEAMS, HOLIDAY }
+private enum class BannerKind { CLOCK, TEAMS, HOLIDAY, RESUME }
+
+/**
+ * What you were last watching (a film or an episode, or the next episode once you've finished
+ * one). [recentOnly] (Automatic) only takes something from the last 12 hours.
+ */
+private fun resumeEntry(vm: AppViewModel, recentOnly: Boolean): app.embertv.data.HistoryEntry? {
+    val e = vm.history.firstOrNull { it.type == ContentType.MOVIE || it.type == ContentType.SERIES } ?: return null
+    if (e.durationMs > 0 && e.progress > 0.95f) return null
+    if (recentOnly && System.currentTimeMillis() - e.updatedAt > 12 * 3_600_000L) return null
+    return e
+}
 
 /**
  * The game for the banner: a live one first, then the next to kick off, then the last result.
@@ -172,8 +186,10 @@ private fun bannerKind(vm: AppViewModel): BannerKind? = when (vm.bannerMode) {
     BannerModes.CLOCK -> BannerKind.CLOCK
     BannerModes.TEAMS -> BannerKind.TEAMS
     BannerModes.HOLIDAY -> if (Holiday.now() != null) BannerKind.HOLIDAY else BannerKind.CLOCK
+    BannerModes.RESUME -> if (resumeEntry(vm, recentOnly = false) != null) BannerKind.RESUME else BannerKind.CLOCK
     else -> when {
         bannerMatch(vm, soonOnly = true) != null -> BannerKind.TEAMS
+        resumeEntry(vm, recentOnly = true) != null -> BannerKind.RESUME
         Holiday.now() != null && (vm.holidayPicks?.films?.size ?: 0) >= 3 -> BannerKind.HOLIDAY
         else -> BannerKind.CLOCK
     }
@@ -263,6 +279,7 @@ fun TvTopBanner(vm: AppViewModel, repo: Repository) {
                 BannerKind.CLOCK -> TvClockBanner(vm, repo) { picking = true }
                 BannerKind.TEAMS -> TvTeamsBanner(vm) { picking = true }
                 BannerKind.HOLIDAY -> TvHolidayBanner(vm) { picking = true }
+                BannerKind.RESUME -> TvResumeBanner(vm, repo) { picking = true }
             }
         }
     }
@@ -295,6 +312,14 @@ private fun TvClockBanner(vm: AppViewModel, repo: Repository, onCustomise: () ->
     }
     var settingPlace by remember { mutableStateOf(false) }
     if (settingPlace) WeatherPlaceDialog(vm) { settingPlace = false }
+    var forecast by remember { mutableStateOf(false) }
+    if (forecast) ForecastDialog(vm) { forecast = false }
+    LaunchedEffect(vm.headlinesOn) {
+        while (true) {
+            vm.refreshHeadlines()
+            delay(5 * 60_000L)
+        }
+    }
     val onNow = rememberOnNow(vm, repo)
     val night = weather?.day == false
     val hero = LocalHomeEntry.current?.hero
@@ -334,6 +359,7 @@ private fun TvClockBanner(vm: AppViewModel, repo: Repository, onCustomise: () ->
                         )
                     }
                 }
+                HeadlinePill(vm, onCustomise)
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (channel != null) {
@@ -346,11 +372,11 @@ private fun TvClockBanner(vm: AppViewModel, repo: Repository, onCustomise: () ->
                         ) { vm.push(Screen.PlayLive(channels, 0)) }
                     }
                     TvButton(
-                        place?.name ?: "Add the weather",
+                        if (place == null) "Add the weather" else "Forecast",
                         focusKey = "home:banner:weather",
                         requester = if (channel == null) hero else null,
                         onLongClick = onCustomise,
-                    ) { settingPlace = true }
+                    ) { if (place == null) settingPlace = true else forecast = true }
                 }
                 BannerHint("Hold OK to change what's shown here")
             }
@@ -387,6 +413,7 @@ private fun TvWeatherPanel(weather: WeatherNow?, place: WeatherPlace?) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        WeatherNotes(weather, Txt.Label)
         val hours = weather?.hours.orEmpty()
         if (hours.isNotEmpty()) {
             Spacer(Modifier.height(14.dp))
@@ -474,6 +501,18 @@ private fun TvTeamsBanner(vm: AppViewModel, onCustomise: () -> Unit) {
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    // And the one after.
+                    val after = vm.teamMatches.filter { vm.isFollowedMatch(it) && it.id != match.id && it.state == MatchState.UPCOMING }.minByOrNull { it.kickoff }
+                    if (after != null) {
+                        Text(
+                            "Next: ${formatDay(after.kickoff / 1000)} ${formatClock(after.kickoff / 1000)}  ·  ${after.home.shortName} v ${after.away.shortName}",
+                            style = Txt.Caption,
+                            color = Ember.Faint,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
                     Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         val soon = match.state == MatchState.UPCOMING && match.kickoff - System.currentTimeMillis() < 15 * 60_000L
@@ -494,23 +533,8 @@ private fun TvTeamsBanner(vm: AppViewModel, onCustomise: () -> Unit) {
                 }
                 BannerHint("Hold OK to change what's shown here")
             }
-            // Their next games, on the right.
-            val others = vm.teamMatches.filter { vm.isFollowedMatch(it) && it.id != match?.id && it.state == MatchState.UPCOMING }.take(3)
-            if (others.isNotEmpty()) {
-                Column(Modifier.width(230.dp).padding(bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("NEXT UP", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim, modifier = Modifier.padding(start = 4.dp))
-                    for (m in others) {
-                        Column(Modifier.fillMaxWidth().glassSurface(RoundedCornerShape(14.dp), Color(0x14FFFFFF)).padding(horizontal = 14.dp, vertical = 10.dp)) {
-                            Text(
-                                "${formatDay(m.kickoff / 1000)} · ${formatClock(m.kickoff / 1000)}".uppercase(Locale.UK),
-                                style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold),
-                                color = Ember.Dim,
-                            )
-                            Text("${m.home.shortName} v ${m.away.shortName}", style = Txt.Label.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-            }
+            // Where your team stands, on the right.
+            LeagueTableCard(vm, match, Modifier.width(300.dp).padding(bottom = 4.dp), rows = 5)
         }
     }
 }
@@ -720,6 +744,7 @@ fun PhoneTopBanner(vm: AppViewModel, repo: Repository) {
                 BannerKind.CLOCK -> PhoneClockBanner(vm, repo, top)
                 BannerKind.TEAMS -> PhoneTeamsBanner(vm, top)
                 BannerKind.HOLIDAY -> PhoneHolidayBanner(vm, top)
+                BannerKind.RESUME -> PhoneResumeBanner(vm, repo)
             }
         }
     }
@@ -737,6 +762,14 @@ private fun PhoneClockBanner(vm: AppViewModel, repo: Repository, top: Dp) {
     }
     var settingPlace by remember { mutableStateOf(false) }
     if (settingPlace) WeatherPlaceDialog(vm) { settingPlace = false }
+    var forecast by remember { mutableStateOf(false) }
+    if (forecast) ForecastDialog(vm) { forecast = false }
+    LaunchedEffect(vm.headlinesOn) {
+        while (true) {
+            vm.refreshHeadlines()
+            delay(5 * 60_000L)
+        }
+    }
     val onNow = rememberOnNow(vm, repo)
     val night = weather?.day == false
     Column(
@@ -765,6 +798,7 @@ private fun PhoneClockBanner(vm: AppViewModel, repo: Repository, top: Dp) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            WeatherNotes(weather, Txt.Caption.copy(fontSize = 14.sp), center = true)
             val hours = weather?.hours.orEmpty()
             if (hours.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
@@ -798,12 +832,15 @@ private fun PhoneClockBanner(vm: AppViewModel, repo: Repository, top: Dp) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        HeadlinePill(vm, onCustomise = null)
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (channel != null) {
                 PillButton("Watch", icon = EmberIcons.Play, primary = true, modifier = Modifier.widthIn(min = 120.dp)) { vm.push(Screen.PlayLive(channels, 0)) }
             }
-            PillButton(place?.name ?: "Add the weather", primary = channel == null) { settingPlace = true }
+            PillButton(if (place == null) "Add the weather" else "Forecast", primary = channel == null) {
+                if (place == null) settingPlace = true else forecast = true
+            }
         }
         BannerHint("Press and hold to change what's shown here", center = true)
     }
@@ -880,6 +917,8 @@ private fun PhoneTeamsBanner(vm: AppViewModel, top: Dp) {
                 }
             }
         }
+        Spacer(Modifier.height(12.dp))
+        LeagueTableCard(vm, match, Modifier.fillMaxWidth(), rows = 5)
         BannerHint("Press and hold to change what's shown here", center = true)
     }
 }
@@ -931,6 +970,321 @@ private fun PhoneHolidayBanner(vm: AppViewModel, top: Dp) {
                     if (cat != null) vm.openCategory(Tabs.MOVIES, cat) else vm.searchHoliday(holiday)
                 }
                 if (films.isNotEmpty()) PillButton("Surprise me") { vm.push(Screen.MovieDetail(films.random())) }
+            }
+            BannerHint("Press and hold to change what's shown here", center = true)
+        }
+    }
+}
+
+// ---------------- Pieces ----------------
+
+/** "Rain likely from 21:00 · Sunset 16:01" under the weather, the rain part in blue. */
+@Composable
+private fun WeatherNotes(weather: WeatherNow?, style: TextStyle, center: Boolean = false) {
+    val rain = weather?.rainNote
+    val sun = weather?.sunNote
+    if (rain == null && sun == null) return
+    Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (rain != null) {
+            Text(rain, style = style.copy(fontWeight = FontWeight.SemiBold), color = Color(0xFF8CC8FF), maxLines = 1)
+            if (sun != null) Text("  ·  ", style = style, color = Ember.Dim)
+        }
+        if (sun != null) Text(sun, style = style, color = Ember.Text.copy(alpha = 0.8f), maxLines = 1, textAlign = if (center) TextAlign.Center else TextAlign.Start)
+    }
+}
+
+/**
+ * The top news story, changing every few seconds, in a slim glass pill. OK (or a tap) finds a
+ * news channel to watch. Not shown on kids profiles, or when headlines are turned off.
+ */
+@Composable
+private fun HeadlinePill(vm: AppViewModel, onCustomise: (() -> Unit)?) {
+    val list = vm.headlines
+    if (!vm.headlinesOn || vm.profile?.kids == true || list.isEmpty()) return
+    val isTv = LocalIsTv.current
+    var index by remember { mutableStateOf(0) }
+    var focused by remember { mutableStateOf(false) }
+    LaunchedEffect(list, focused) {
+        // Holds still while it's highlighted, so it can be read.
+        while (!focused) {
+            delay(8_000)
+            index = (index + 1) % list.size
+        }
+    }
+    val headline = list[index % list.size]
+    Spacer(Modifier.height(if (isTv) 12.dp else 10.dp))
+    FocusBox(
+        modifier = Modifier.then(if (isTv) Modifier.widthIn(max = 560.dp) else Modifier.fillMaxWidth()).height(if (isTv) 38.dp else 40.dp),
+        focusKey = "home:banner:news",
+        shape = RoundedCornerShape(19.dp),
+        focusedScale = 1.03f,
+        color = Color(0x1AFFFFFF),
+        focusedColor = Color.White,
+        onFocusChange = { focused = it },
+        onClick = { vm.watchNews() },
+        onLongClick = onCustomise,
+    ) { f ->
+        Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "NEWS",
+                style = Txt.Caption.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp),
+                color = if (f) Color.Black else Ember.Live,
+            )
+            Spacer(Modifier.width(10.dp))
+            Crossfade(targetState = headline, label = "headline", modifier = Modifier.weight(1f)) { h ->
+                Text(
+                    h,
+                    style = Txt.Label.copy(fontWeight = FontWeight.Medium),
+                    color = if (f) Color.Black else Ember.Text.copy(alpha = 0.9f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Where your team stands: a few lines of the league table around them, your team lit up. For
+ * the team playing in [match], or your first team.
+ */
+@Composable
+private fun LeagueTableCard(vm: AppViewModel, match: Match?, modifier: Modifier, rows: Int) {
+    val team = vm.followedTeams.firstOrNull { it.id == match?.home?.id || it.id == match?.away?.id } ?: vm.followedTeams.firstOrNull() ?: return
+    LaunchedEffect(team.league) { vm.ensureLeagueTable(team.league) }
+    val tables = vm.leagueTables[team.league].orEmpty()
+    val table = tables.firstOrNull { t -> t.any { it.teamId == team.id } } ?: return
+    val at = table.indexOfFirst { it.teamId == team.id }
+    val from = (at - rows / 2).coerceIn(0, (table.size - rows).coerceAtLeast(0))
+    val shown = table.subList(from, minOf(table.size, from + rows))
+    val leagueName = app.embertv.data.LEAGUES.firstOrNull { it.code == team.league }?.name ?: "League table"
+    Column(modifier.glassSurface(RoundedCornerShape(16.dp), Color(0x14FFFFFF)).padding(horizontal = 12.dp, vertical = 10.dp)) {
+        Row(Modifier.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(leagueName.uppercase(Locale.UK), style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp), color = Ember.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text("P", style = Txt.Caption, color = Ember.Faint, textAlign = TextAlign.End, modifier = Modifier.width(28.dp))
+            Text("PTS", style = Txt.Caption, color = Ember.Faint, textAlign = TextAlign.End, modifier = Modifier.width(36.dp))
+        }
+        Spacer(Modifier.height(6.dp))
+        for (r in shown) {
+            val ours = r.teamId == team.id
+            val colour = if (ours) Ember.Text else Ember.Text.copy(alpha = 0.72f)
+            val weight = if (ours) FontWeight.Bold else FontWeight.Normal
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (ours) Color(0x24FFFFFF) else Color.Transparent)
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("${r.rank}", style = Txt.Caption.copy(fontWeight = weight), color = colour, modifier = Modifier.width(24.dp))
+                Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+                    if (r.logo.isNotBlank()) NetImage(r.logo, Modifier.fillMaxSize(), androidx.compose.ui.layout.ContentScale.Fit)
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(r.shortName, style = Txt.Label.copy(fontWeight = weight), color = colour, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text("${r.played}", style = Txt.Caption.copy(fontWeight = weight), color = colour, textAlign = TextAlign.End, modifier = Modifier.width(28.dp))
+                Text("${r.points}", style = Txt.Label.copy(fontWeight = FontWeight.SemiBold), color = colour, textAlign = TextAlign.End, modifier = Modifier.width(36.dp))
+            }
+        }
+    }
+}
+
+/** The day's forecast and the next five, with the rain warning and sunset, as in Apple's Weather app. */
+@Composable
+fun ForecastDialog(vm: AppViewModel, onDone: () -> Unit) {
+    val isTv = LocalIsTv.current
+    var changing by remember { mutableStateOf(false) }
+    if (changing) {
+        WeatherPlaceDialog(vm) { changing = false }
+        return
+    }
+    val weather = vm.weather
+    val place = vm.weatherPlace
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDone) {
+        DialogBackdropBlur()
+        Column(
+            Modifier
+                .widthIn(max = 560.dp)
+                .fillMaxWidth()
+                .heightIn(max = if (isTv) 560.dp else 680.dp)
+                .liquidGlass(RoundedCornerShape(28.dp))
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            SheetTitle(
+                place?.name ?: "Weather",
+                eyebrow = "FORECAST",
+                subtitle = weather?.let { w -> "${w.temp}°  ${Weather.describe(w.code)}  ·  Feels like ${w.feelsLike}°" },
+            )
+            WeatherNotes(weather, Txt.Label, center = true)
+            Spacer(Modifier.height(14.dp))
+            val days = weather?.days.orEmpty()
+            if (days.isEmpty()) {
+                Text("The forecast isn't in yet.", style = Txt.Body, color = Ember.Dim)
+            } else {
+                val coldest = days.minOf { it.low }
+                val warmest = days.maxOf { it.high }
+                Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+                    days.forEachIndexed { i, d ->
+                        if (i > 0) Box(Modifier.fillMaxWidth().height(0.6.dp).background(Color(0x1FFFFFFF)))
+                        Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(d.name, style = Txt.Label.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.width(66.dp))
+                            WeatherIcon(d.code, true, 28.dp)
+                            Box(Modifier.width(50.dp).padding(start = 8.dp)) {
+                                if (d.rainChance >= 20) Text("${d.rainChance}%", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = Color(0xFF8CC8FF))
+                            }
+                            Text("${d.low}°", style = Txt.Label, color = Ember.Dim, textAlign = TextAlign.End, modifier = Modifier.width(38.dp))
+                            TempRange(d.low, d.high, coldest, warmest, Modifier.weight(1f).padding(horizontal = 12.dp))
+                            Text("${d.high}°", style = Txt.Label.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.width(38.dp))
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                GlassButton("Change town", EmberIcons.Search) { changing = true }
+                GlassButton("Done", EmberIcons.Check, autoFocus = true, onClick = onDone)
+            }
+        }
+    }
+}
+
+/** A day's low-to-high bar on the week's scale, cool blue to warm yellow, like Apple's Weather. */
+@Composable
+private fun TempRange(low: Int, high: Int, coldest: Int, warmest: Int, modifier: Modifier) {
+    Canvas(modifier.height(6.dp)) {
+        val span = (warmest - coldest).coerceAtLeast(1).toFloat()
+        val r = CornerRadius(size.height / 2, size.height / 2)
+        drawRoundRect(Color(0x1FFFFFFF), cornerRadius = r)
+        val x0 = (low - coldest) / span * size.width
+        val x1 = ((high - coldest) / span * size.width).coerceAtLeast(x0 + size.height)
+        drawRoundRect(
+            Brush.horizontalGradient(listOf(Color(0xFF6CB6FF), Color(0xFFFFD25A)), startX = 0f, endX = size.width),
+            topLeft = Offset(x0, 0f),
+            size = Size(x1 - x0, size.height),
+            cornerRadius = r,
+        )
+    }
+}
+
+// ---------------- Pick up where you left off ----------------
+
+/** Wide artwork for a history entry: the film's or show's backdrop when there is one. */
+@Composable
+private fun rememberBackdrop(repo: Repository, e: app.embertv.data.HistoryEntry): String {
+    val info = rememberLoad(e.key) {
+        if (e.type == ContentType.MOVIE) repo.movieInfo(e.id).backdrop else repo.seriesInfo(e.seriesId).backdrop
+    }.value
+    val wide = (info as? LoadResult.Ok)?.value
+    return wide?.takeIf { it.isNotBlank() } ?: e.image.ifBlank { e.seriesCover }
+}
+
+private fun timeLeft(e: app.embertv.data.HistoryEntry): String? {
+    if (e.durationMs <= 0 || e.positionMs <= 0) return null
+    val mins = ((e.durationMs - e.positionMs) / 60_000L).coerceAtLeast(1L)
+    return if (mins >= 60) "${mins / 60} hr ${mins % 60} min left" else "$mins min left"
+}
+
+private fun openDetails(vm: AppViewModel, e: app.embertv.data.HistoryEntry) {
+    if (e.type == ContentType.MOVIE) {
+        vm.push(Screen.MovieDetail(Movie(e.id, e.title, e.seriesCover, "", "", e.ext.ifBlank { "mp4" }, 0L)))
+    } else {
+        vm.push(Screen.SeriesDetail(app.embertv.data.Series(e.seriesId, e.title, e.seriesCover, "", "", "", "", "")))
+    }
+}
+
+/** A thin progress line with the time left beside it. */
+@Composable
+private fun ResumeProgress(e: app.embertv.data.HistoryEntry, width: Dp) {
+    val left = timeLeft(e) ?: return
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.width(width).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x33FFFFFF))) {
+            Box(Modifier.fillMaxWidth(e.progress.coerceIn(0.02f, 1f)).height(4.dp).background(Color.White))
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(left, style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = Ember.Text.copy(alpha = 0.85f))
+    }
+}
+
+@Composable
+private fun TvResumeBanner(vm: AppViewModel, repo: Repository, onCustomise: () -> Unit) {
+    val e = resumeEntry(vm, recentOnly = false) ?: return
+    val art = rememberBackdrop(repo, e)
+    val hero = LocalHomeEntry.current?.hero
+    Box(Modifier.fillMaxWidth().heightIn(min = 310.dp + TV_MENU_SPACE)) {
+        Crossfade(targetState = art, label = "resume-art", modifier = Modifier.matchParentSize()) { a ->
+            NetImage(a, Modifier.fillMaxSize())
+        }
+        // Apple TV style: the picture fills the width, fading softly into the page on the left and below.
+        Box(
+            Modifier.matchParentSize().background(
+                Brush.horizontalGradient(0f to Ember.Bg.copy(alpha = 0.92f), 0.35f to Ember.Bg.copy(alpha = 0.55f), 0.65f to Color.Transparent)
+            )
+        )
+        Box(Modifier.matchParentSize().background(Brush.verticalGradient(0f to Ember.Bg.copy(alpha = 0.55f), 0.25f to Color.Transparent, 0.62f to Color.Transparent, 1f to Ember.Bg)))
+        Column(Modifier.align(Alignment.BottomStart).padding(start = 48.dp, top = TV_MENU_SPACE + 30.dp, bottom = 22.dp).width(560.dp)) {
+            Text("PICK UP WHERE YOU LEFT OFF", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim)
+            Spacer(Modifier.height(6.dp))
+            Text(app.embertv.data.Versions.cleanTitle(e.title), style = Txt.LargeTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (e.subtitle.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(e.subtitle, style = Txt.Label, color = Ember.Text.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(Modifier.height(12.dp))
+            ResumeProgress(e, 220.dp)
+            Spacer(Modifier.height(18.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                TvButton(
+                    if (e.positionMs > 0) "Resume" else "Play",
+                    icon = "▶",
+                    focusKey = "home:banner:resume",
+                    requester = hero,
+                    onLongClick = onCustomise,
+                ) { vm.resume(e) }
+                TvButton("More info", focusKey = "home:banner:info", onLongClick = onCustomise) { openDetails(vm, e) }
+            }
+            BannerHint("Hold OK to change what's shown here")
+        }
+    }
+}
+
+@Composable
+private fun PhoneResumeBanner(vm: AppViewModel, repo: Repository) {
+    val e = resumeEntry(vm, recentOnly = false) ?: return
+    val landscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val wide = rememberBackdrop(repo, e)
+    val art = if (landscape) wide else e.seriesCover.ifBlank { wide }
+    Box(Modifier.fillMaxWidth().aspectRatio(if (landscape) 2.4f else 4f / 5f)) {
+        Placeholder(e.title, Modifier.fillMaxSize(), fontSizeSp = 32)
+        NetImage(art, Modifier.fillMaxSize())
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(0f to Color(0x66000000), 0.18f to Color.Transparent, 0.45f to Color.Transparent, 0.78f to Ember.Bg.copy(alpha = 0.85f), 1f to Ember.Bg)
+            )
+        )
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("PICK UP WHERE YOU LEFT OFF", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Text.copy(alpha = 0.75f))
+            Spacer(Modifier.height(4.dp))
+            Text(
+                app.embertv.data.Versions.cleanTitle(e.title),
+                style = Txt.LargeTitle.copy(fontSize = (30f * Txt.scale).sp, lineHeight = (34f * Txt.scale).sp),
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (e.subtitle.isNotBlank()) {
+                Text(e.subtitle, style = Txt.Caption.copy(fontSize = 14.sp), color = Ember.Text.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(Modifier.height(10.dp))
+            ResumeProgress(e, 120.dp)
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PillButton(if (e.positionMs > 0) "Resume" else "Play", icon = EmberIcons.Play, primary = true, modifier = Modifier.widthIn(min = 150.dp)) { vm.resume(e) }
+                PillButton("More info") { openDetails(vm, e) }
             }
             BannerHint("Press and hold to change what's shown here", center = true)
         }

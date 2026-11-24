@@ -28,7 +28,14 @@ data class WeatherPlace(val name: String, val detail: String, val lat: Double, v
 /** One hour of the forecast. [time] is "HH:mm" local to the place. */
 data class WeatherHour(val time: String, val temp: Int, val code: Int, val day: Boolean)
 
-/** Now, today's high and low, and the next few hours. Temperatures in whole degrees. */
+/** One day of the forecast: "Today", "Wed"..., its weather, high, low and chance of rain (%). */
+data class WeatherDay(val name: String, val code: Int, val high: Int, val low: Int, val rainChance: Int)
+
+/**
+ * Now, today's high and low, and the next few hours. Temperatures in whole degrees.
+ * [rainNote] warns of rain or snow in the next 12 hours ("Rain from 21:00"), [sunNote] gives the
+ * next sunset or sunrise, and [days] is the forecast for today and the next five days.
+ */
 data class WeatherNow(
     val temp: Int,
     val feelsLike: Int,
@@ -38,6 +45,9 @@ data class WeatherNow(
     val low: Int,
     val hours: List<WeatherHour>,
     val fetchedAt: Long,
+    val rainNote: String? = null,
+    val sunNote: String? = null,
+    val days: List<WeatherDay> = emptyList(),
 )
 
 /**
@@ -87,9 +97,9 @@ object Weather {
         val root = get(
             "https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}" +
                 "&current=temperature_2m,apparent_temperature,weather_code,is_day" +
-                "&hourly=temperature_2m,weather_code,is_day" +
-                "&daily=temperature_2m_max,temperature_2m_min" +
-                "&timezone=auto&forecast_days=2$unit"
+                "&hourly=temperature_2m,weather_code,is_day,precipitation_probability,precipitation" +
+                "&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset,precipitation_probability_max" +
+                "&timezone=auto&forecast_days=6$unit"
         ) ?: return null
         val current = root.optJSONObject("current") ?: return null
         val nowTime = current.optString("time") // "2026-11-24T19:00", local to the place
@@ -108,6 +118,52 @@ object Weather {
         }
         val daily = root.optJSONObject("daily")
         val temp = current.optDouble("temperature_2m").takeIf { !it.isNaN() } ?: return null
+
+        // Rain or snow in the next 12 hours: when it starts, or when it stops if it's already wet.
+        val chances = hourly?.optJSONArray("precipitation_probability") ?: JSONArray()
+        val amounts = hourly?.optJSONArray("precipitation") ?: JSONArray()
+        fun wetCode(c: Int) = c in 51..67 || c in 71..77 || c in 80..86 || c in 95..99
+        fun snowCode(c: Int) = c in 71..77 || c == 85 || c == 86
+        val ahead = (0 until times.length()).filter { times.optString(it) > nowTime }.take(12)
+        fun wetAt(i: Int) = (wetCode(codes.optInt(i)) && chances.optInt(i, 0) >= 50) || amounts.optDouble(i, 0.0) >= 0.4
+        val nowCode = current.optInt("weather_code")
+        val rainNote = if (wetCode(nowCode)) {
+            val what = if (snowCode(nowCode)) "Snow" else "Rain"
+            val dry = ahead.firstOrNull { !wetAt(it) }
+            if (dry != null) "$what until ${times.optString(dry).substringAfter('T').take(5)}" else "$what for the next few hours"
+        } else {
+            ahead.firstOrNull { wetAt(it) }?.let { i ->
+                "${if (snowCode(codes.optInt(i))) "Snow" else "Rain"} likely from ${times.optString(i).substringAfter('T').take(5)}"
+            }
+        }
+
+        // The next sunset, or tomorrow's sunrise once the sun's down.
+        val sunrises = daily?.optJSONArray("sunrise") ?: JSONArray()
+        val sunsets = daily?.optJSONArray("sunset") ?: JSONArray()
+        val sunsetToday = sunsets.optString(0)
+        val sunNote = when {
+            sunsetToday.isNotBlank() && nowTime < sunsetToday -> "Sunset ${sunsetToday.substringAfter('T').take(5)}"
+            sunrises.length() > 1 -> "Sunrise ${sunrises.optString(1).substringAfter('T').take(5)}"
+            else -> null
+        }
+
+        // Today and the next five days.
+        val dayTimes = daily?.optJSONArray("time") ?: JSONArray()
+        val dayFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.UK)
+        val dayName = java.text.SimpleDateFormat("EEE", java.util.Locale.UK)
+        val forecastDays = (0 until dayTimes.length()).mapNotNull { i ->
+            val hi = daily?.optJSONArray("temperature_2m_max")?.optDouble(i) ?: Double.NaN
+            val lo = daily?.optJSONArray("temperature_2m_min")?.optDouble(i) ?: Double.NaN
+            if (hi.isNaN() || lo.isNaN()) return@mapNotNull null
+            val name = if (i == 0) "Today" else runCatching { dayName.format(dayFormat.parse(dayTimes.optString(i))!!) }.getOrDefault("")
+            WeatherDay(
+                name = name,
+                code = daily?.optJSONArray("weather_code")?.optInt(i) ?: 3,
+                high = Math.round(hi).toInt(),
+                low = Math.round(lo).toInt(),
+                rainChance = daily?.optJSONArray("precipitation_probability_max")?.optInt(i, 0) ?: 0,
+            )
+        }
         fun whole(d: Double?, fallback: Double) = Math.round(d?.takeIf { !it.isNaN() } ?: fallback).toInt()
         return WeatherNow(
             temp = whole(temp, temp),
@@ -118,6 +174,9 @@ object Weather {
             low = whole(daily?.optJSONArray("temperature_2m_min")?.optDouble(0), temp),
             hours = hours,
             fetchedAt = System.currentTimeMillis(),
+            rainNote = rainNote,
+            sunNote = sunNote,
+            days = forecastDays,
         )
     }
 

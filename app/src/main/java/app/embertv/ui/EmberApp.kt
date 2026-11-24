@@ -110,6 +110,10 @@ fun EmberApp(vm: AppViewModel, isTv: Boolean) {
                 vm.dueReminder?.let { ReminderDialog(vm, it) }
                 vm.dueKickoff?.let { KickoffDialog(vm, it) }
 
+                // Kids profiles: bedtime and the daily limit (checked every minute, and on switching).
+                LaunchedEffect(vm.profile?.id, vm.pickingProfile, vm.kidsRules, vm.repo) { vm.checkBedtime() }
+                vm.bedtimeLock?.let { BedtimeCard(vm, it) }
+
                 // TV screensaver after a few idle minutes
                 if (isTv) {
                     LaunchedEffect(Unit) {

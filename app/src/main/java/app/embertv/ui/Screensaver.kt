@@ -7,6 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -158,6 +159,26 @@ fun Screensaver(vm: AppViewModel) {
         )
         Column(Modifier.align(Alignment.TopEnd).padding(top = 40.dp, end = 56.dp), horizontalAlignment = Alignment.End) {
             Clock(Modifier)
+            // The weather beside the time, when a town is set (Settings → Weather).
+            LaunchedEffect(Unit) { vm.refreshWeather() }
+            val weather = vm.weather
+            val place = vm.weatherPlace
+            if (weather != null && place != null) {
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    WeatherIcon(weather.code, weather.day, 30.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "${weather.temp}°  ${place.name}",
+                        style = Txt.Label.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                        color = Color.White,
+                        maxLines = 1,
+                    )
+                }
+                weather.rainNote?.let {
+                    Text(it, style = Txt.Caption, color = Color(0xFF8CC8FF), maxLines = 1)
+                }
+            }
             // Your team's game, at a glance.
             val line = teamLine(vm, LocalNow.current)
             if (line != null) {

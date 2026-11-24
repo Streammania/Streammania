@@ -54,6 +54,18 @@ data class TeamScore(val name: String, val shortName: String, val logo: String, 
 /** A club someone follows. [league] is the code of its domestic league. */
 data class Team(val id: String, val name: String, val shortName: String, val logo: String, val league: String)
 
+/** One line of a league table. */
+data class TableRow(
+    val rank: Int,
+    val teamId: String,
+    val name: String,
+    val shortName: String,
+    val logo: String,
+    val played: Int,
+    val points: Int,
+    val goalDiff: Int,
+)
+
 enum class MatchEventKind { GOAL, PENALTY, OWN_GOAL, YELLOW, RED }
 
 /** A goal or card: the minute ("67'"), what happened, who, and for which side. */
@@ -306,6 +318,57 @@ object ScoresClient {
         val found = leagues.map { l -> async { matches(l, range) } }.awaitAll().flatten()
         // Some feeds don't answer date ranges: ask for each day instead (the next week or so).
         (found.ifEmpty { dayByDay(leagues, 0, minOf(days, 8)) }).distinctBy { it.id }.sortedBy { it.kickoff }
+    }
+
+    /**
+     * The league table for [code], top first. Leagues that split into groups (or have
+     * conferences) come back as several tables. Empty if it couldn't be fetched.
+     */
+    suspend fun tables(code: String): List<List<TableRow>> {
+        val root = fetch("https://site.api.espn.com/apis/v2/sports/soccer/$code/standings") ?: return emptyList()
+        val groups = ArrayList<List<TableRow>>()
+        fun walk(v: Any?) {
+            when (v) {
+                is JSONObject -> {
+                    val entries = v.optJSONObject("standings")?.optJSONArray("entries")
+                    if (entries != null && entries.length() > 0) {
+                        tableRows(entries).takeIf { it.isNotEmpty() }?.let { groups += it }
+                        return
+                    }
+                    val keys = v.keys()
+                    while (keys.hasNext()) walk(v.opt(keys.next()))
+                }
+                is org.json.JSONArray -> for (i in 0 until v.length()) walk(v.opt(i))
+            }
+        }
+        walk(root)
+        return groups
+    }
+
+    private fun tableRows(entries: org.json.JSONArray): List<TableRow> {
+        val rows = asArray(entries).objects().mapNotNull { e ->
+            val t = e.optJSONObject("team") ?: return@mapNotNull null
+            val stats = HashMap<String, Double>()
+            for (st in asArray(e.opt("stats")).objects()) {
+                val v = st.optDouble("value", Double.NaN)
+                if (!v.isNaN()) stats[st.s("name")] = v
+            }
+            fun stat(name: String) = stats[name]?.toInt()
+            val logo = t.s("logo").ifEmpty { asArray(t.opt("logos")).objects().firstOrNull()?.s("href") ?: "" }
+            TableRow(
+                rank = stat("rank") ?: 0,
+                teamId = t.s("id"),
+                name = t.s("displayName"),
+                shortName = t.s("shortDisplayName").ifEmpty { t.s("displayName") },
+                logo = logo,
+                played = stat("gamesPlayed") ?: 0,
+                points = stat("points") ?: 0,
+                goalDiff = stat("pointDifferential") ?: 0,
+            )
+        }
+        // In table order; if the feed leaves the positions out, the order it gave.
+        return if (rows.all { it.rank > 0 }) rows.sortedBy { it.rank }
+        else rows.mapIndexed { i, r -> r.copy(rank = i + 1) }
     }
 
     private val teamCache = HashMap<String, List<Team>>()
