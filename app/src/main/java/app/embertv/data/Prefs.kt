@@ -164,7 +164,7 @@ class Prefs(context: Context) {
         val e = sp.edit()
         for (key in sp.all.keys) {
             val belongs = if (id == MAIN_PROFILE) {
-                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next", "kickoff_reminders", "finished_at", "match_reminders", "home_artwork", "recent_searches", "featured_cache", "banner_mode", "watch_today", "auto_banners") ||
+                key in setOf("favourites", "history", "recent_channels", "audio_lang", "subs", "reminders", "category_rules", "teams", "watched", "hidden_channels", "sport_leagues", "sport_others", "series_seen", "last_watched", "home_order", "home_hidden", "backdrop", "text_scale", "show_hints", "autoplay_next", "kickoff_reminders", "finished_at", "match_reminders", "home_artwork", "recent_searches", "featured_cache", "banner_mode", "watch_today", "auto_banners", "clock_theme") ||
                     key.startsWith("pos_") || key.startsWith("last_ep_")
             } else {
                 key.startsWith("p_${id}_")
@@ -627,6 +627,13 @@ class Prefs(context: Context) {
         get() = (sp.getString(pk("auto_banners"), null) ?: "teams,resume,holiday").split(',').filter { it.isNotBlank() }.toSet()
         set(value) {
             sp.edit().putString(pk("auto_banners"), value.joinToString(",")).apply()
+        }
+
+    /** The background behind the clock on Home: "auto" (the weather, time and season) or a fixed one. */
+    var clockTheme: String
+        get() = sp.getString(pk("clock_theme"), "auto") ?: "auto"
+        set(value) {
+            sp.edit().putString(pk("clock_theme"), value).apply()
         }
 
     /** Bedtimes and daily limits for kids profiles, by profile id. */

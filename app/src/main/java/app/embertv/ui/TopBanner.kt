@@ -230,7 +230,7 @@ fun bannerMatchIds(vm: AppViewModel): Set<String> =
 
 /** Late at night (11pm to 6am) the banner dims and stops moving, so it isn't glaring in a dark room. */
 @Composable
-private fun rememberLateNight(): Boolean {
+internal fun rememberLateNight(): Boolean {
     val now = LocalNow.current
     return remember(now / 60) {
         val hour = Calendar.getInstance().apply { timeInMillis = now * 1000 }.get(Calendar.HOUR_OF_DAY)
@@ -238,18 +238,35 @@ private fun rememberLateNight(): Boolean {
     }
 }
 
-/** "Good evening, Michael" over the clock (just "Good evening" for an unnamed profile). */
+/**
+ * "Good evening, Michael" over the clock (just "Good evening" for an unnamed profile). On special
+ * days it says so: Christmas Eve and Day, Halloween, New Year's Day, and on New Year's Eve a
+ * countdown through the last hour.
+ */
 @Composable
 private fun Greeting(vm: AppViewModel, style: TextStyle, modifier: Modifier = Modifier) {
     val now = LocalNow.current
-    val hour = remember(now / 300) { Calendar.getInstance().apply { timeInMillis = now * 1000 }.get(Calendar.HOUR_OF_DAY) }
-    val part = when (hour) {
-        in 5..11 -> "Good morning"
-        in 12..17 -> "Good afternoon"
-        else -> "Good evening"
-    }
+    val c = remember(now / 60) { Calendar.getInstance().apply { timeInMillis = now * 1000 } }
+    val month = c.get(Calendar.MONTH)
+    val day = c.get(Calendar.DAY_OF_MONTH)
+    val hour = c.get(Calendar.HOUR_OF_DAY)
     val name = vm.profile?.name?.trim().orEmpty().takeIf { it.isNotBlank() && !it.equals("Me", ignoreCase = true) }
-    Text(if (name != null) "$part, $name" else part, style = style, color = Ember.Text.copy(alpha = 0.85f), maxLines = 1, modifier = modifier)
+    fun named(words: String) = if (name != null) "$words, $name" else words
+    val text = when {
+        month == Calendar.DECEMBER && day == 31 && hour == 23 -> {
+            val left = 60 - c.get(Calendar.MINUTE)
+            "$left minute${if (left == 1) "" else "s"} to ${c.get(Calendar.YEAR) + 1}"
+        }
+        month == Calendar.DECEMBER && day == 31 -> named("Happy New Year's Eve")
+        month == Calendar.JANUARY && day == 1 -> named("Happy New Year")
+        month == Calendar.DECEMBER && day == 24 -> named("Merry Christmas Eve")
+        month == Calendar.DECEMBER && day == 25 -> named("Merry Christmas")
+        month == Calendar.OCTOBER && day == 31 -> named("Happy Halloween")
+        hour in 5..11 -> named("Good morning")
+        hour in 12..17 -> named("Good afternoon")
+        else -> named("Good evening")
+    }
+    Text(text, style = style, color = Ember.Text.copy(alpha = 0.88f), maxLines = 1, modifier = modifier)
 }
 
 /** Which banner is showing when they take turns: a small glass strip of dots. */
@@ -265,31 +282,6 @@ private fun TurnDots(count: Int, index: Int, modifier: Modifier) {
             Box(Modifier.size(width = if (i == index) 18.dp else 6.dp, height = 6.dp).clip(RoundedCornerShape(3.dp)).background(if (i == index) Color.White else Color(0x66FFFFFF)))
         }
     }
-}
-
-/** The channel for "On now": your first favourite channel, or the last one you watched. */
-private class OnNow(val channels: List<Channel>, val programme: Programme?)
-
-@Composable
-private fun rememberOnNow(vm: AppViewModel, repo: Repository): OnNow? {
-    val favs = vm.favourites.filter { it.type == ContentType.LIVE }
-    val source = favs.ifEmpty { vm.recentChannels.toList() }.take(40).map { it.toChannel() }
-    val first = source.firstOrNull()
-    val listings by produceState(first?.let { repo.cachedEpg(EpgAlias.of(it.streamId)) }, repo, first?.streamId) {
-        if (first != null && value == null) {
-            delay(600)
-            value = try {
-                repo.epg(EpgAlias.of(first.streamId))
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                null
-            }
-        }
-    }
-    if (first == null) return null
-    val now = LocalNow.current
-    return OnNow(source, listings?.firstOrNull { it.start <= now && it.end > now })
 }
 
 /** The time, kept to the minute, and today's date ("Tuesday 24 November"). */
@@ -311,7 +303,7 @@ private fun ClockAndDate(clockStyle: TextStyle, dateStyle: TextStyle, center: Bo
 
 /** The quiet hint under the banner's buttons. */
 @Composable
-private fun BannerHint(text: String, center: Boolean = false) {
+internal fun BannerHint(text: String, center: Boolean = false) {
     if (!HintsSetting.show) return
     Text(
         text,
@@ -366,7 +358,7 @@ fun TvTopBanner(vm: AppViewModel, repo: Repository) {
 }
 
 /** Warm reds, golds and greens for Christmas; orange and purple for Halloween. */
-private fun festiveGlows(christmas: Boolean, wide: Boolean): Array<Triple<Color, Float, Float>> = when {
+internal fun festiveGlows(christmas: Boolean, wide: Boolean): Array<Triple<Color, Float, Float>> = when {
     christmas && wide -> arrayOf(
         Triple(Color(0x8CD63C28), 0.75f, 0f),
         Triple(Color(0x59E6AA46), 0.98f, 0.6f),
@@ -377,7 +369,7 @@ private fun festiveGlows(christmas: Boolean, wide: Boolean): Array<Triple<Color,
 }
 
 /** The soft colour behind a banner, fading into the page at the bottom. */
-private fun Modifier.bannerGlow(vararg glows: Triple<Color, Float, Float>, dim: Boolean = false): Modifier = drawBehind {
+internal fun Modifier.bannerGlow(vararg glows: Triple<Color, Float, Float>, dim: Boolean = false): Modifier = drawBehind {
     for ((color, x, y) in glows) {
         drawRect(
             Brush.radialGradient(
@@ -406,72 +398,61 @@ private fun TvClockBanner(vm: AppViewModel, repo: Repository, onCustomise: () ->
     if (settingPlace) WeatherPlaceDialog(vm) { settingPlace = false }
     var forecast by remember { mutableStateOf(false) }
     if (forecast) ForecastDialog(vm) { forecast = false }
-    val onNow = rememberOnNow(vm, repo)
-    val night = weather?.day == false
+    val onNow = rememberOnNowList(vm, repo, count = 4)
+    val now = LocalNow.current
     val hero = LocalHomeEntry.current?.hero
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 310.dp + TV_MENU_SPACE)
-            .bannerGlow(
-                Triple(if (night) Color(0x8C2A3570) else Color(0x8C3D5E96), 0.82f, 0f),
-                Triple(Color(0x55402A66), 0f, 1f),
-                dim = late,
-            )
-    ) {
-        Row(
+    Box(Modifier.fillMaxWidth().heightIn(min = 310.dp + TV_MENU_SPACE)) {
+        ClockBackdrop(
+            theme = clockThemeNow(vm),
+            night = weather?.day == false,
+            moving = !late,
+            dim = late,
+            lightsTop = TV_MENU_SPACE - 2.dp,
+            modifier = Modifier.matchParentSize(),
+        )
+        Column(
             Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomStart)
-                .padding(start = 48.dp, end = 48.dp, top = TV_MENU_SPACE + 6.dp, bottom = 22.dp)
-                .graphicsLayer { alpha = if (late) 0.78f else 1f },
-            verticalAlignment = Alignment.Bottom,
+                .padding(start = 48.dp, end = 48.dp, top = TV_MENU_SPACE + 6.dp, bottom = 16.dp)
+                .graphicsLayer { alpha = if (late) 0.8f else 1f },
         ) {
-            Column(Modifier.weight(1f)) {
-                Greeting(vm, Txt.Headline, Modifier.padding(start = 6.dp))
-                ClockAndDate(
-                    clockStyle = Txt.LargeTitle.copy(fontSize = 118.sp, lineHeight = 120.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-5).sp),
-                    dateStyle = Txt.Headline,
-                    center = false,
-                )
-                val programme = onNow?.programme
-                val channels = onNow?.channels.orEmpty()
-                val channel = channels.firstOrNull()
-                if (channel != null) {
-                    Spacer(Modifier.height(14.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 6.dp)) {
-                        Box(Modifier.size(7.dp).clip(CircleShape).background(Ember.Live))
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            if (programme != null) "On now: ${programme.title} · ${channelParts(channel.name).first}" else "On ${channelParts(channel.name).first}",
-                            style = Txt.Label,
-                            color = Ember.Text.copy(alpha = 0.85f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+            Row(verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    Greeting(vm, Txt.Headline, Modifier.padding(start = 6.dp))
+                    ClockAndDate(
+                        clockStyle = Txt.LargeTitle.copy(fontSize = 112.sp, lineHeight = 114.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-5).sp),
+                        dateStyle = Txt.Headline,
+                        center = false,
+                    )
                 }
-                Spacer(Modifier.height(16.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (channel != null) {
-                        TvButton(
-                            "Watch ${channelParts(channel.name).first}",
-                            icon = "▶",
-                            focusKey = "home:banner:watch",
-                            requester = hero,
-                            onLongClick = onCustomise,
-                        ) { vm.push(Screen.PlayLive(channels, 0)) }
-                    }
-                    TvButton(
-                        if (place == null) "Add the weather" else "Forecast",
-                        focusKey = "home:banner:weather",
-                        requester = if (channel == null) hero else null,
-                        onLongClick = onCustomise,
-                    ) { if (place == null) settingPlace = true else forecast = true }
-                }
-                BannerHint("Hold OK to change what's shown here")
+                TvWeatherPanel(weather, place)
             }
-            TvWeatherPanel(weather, place)
+            Spacer(Modifier.height(14.dp))
+            // What's on your channels now: OK on one watches it. The forecast sits at the end.
+            val channels = onNow.channels.take(4)
+            if (channels.isNotEmpty()) OnNowLabel(Modifier.padding(start = 2.dp, bottom = 9.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                channels.forEachIndexed { i, c ->
+                    OnNowCard(
+                        c,
+                        onNow.listings[c.streamId]?.firstOrNull { it.start <= now && it.end > now },
+                        now,
+                        width = 176.dp,
+                        focusKey = "home:banner:onnow:${c.streamId}",
+                        requester = if (i == 0) hero else null,
+                        onLongClick = onCustomise,
+                    ) { vm.push(Screen.PlayLive(onNow.channels, i)) }
+                }
+                ForecastCard(
+                    weather,
+                    hasPlace = place != null,
+                    width = 112.dp,
+                    requester = if (channels.isEmpty()) hero else null,
+                    onLongClick = onCustomise,
+                ) { if (place == null) settingPlace = true else forecast = true }
+            }
+            BannerHint(if (channels.isNotEmpty()) "OK to watch   ·   Hold OK to change what's shown here" else "Hold OK to change what's shown here")
         }
     }
 }
@@ -484,11 +465,11 @@ private fun TvWeatherPanel(weather: WeatherNow?, place: WeatherPlace?) {
             return@Column
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            WeatherIcon(weather?.code ?: 3, weather?.day ?: true, 66.dp)
-            Spacer(Modifier.width(14.dp))
+            WeatherIcon(weather?.code ?: 3, weather?.day ?: true, 58.dp)
+            Spacer(Modifier.width(12.dp))
             Text(
                 weather?.let { "${it.temp}°" } ?: "–°",
-                style = Txt.LargeTitle.copy(fontSize = 64.sp, lineHeight = 66.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-2).sp),
+                style = Txt.LargeTitle.copy(fontSize = 56.sp, lineHeight = 58.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-2).sp),
                 color = Ember.Text,
             )
         }
@@ -507,11 +488,11 @@ private fun TvWeatherPanel(weather: WeatherNow?, place: WeatherPlace?) {
         WeatherNotes(weather, Txt.Label)
         val hours = weather?.hours.orEmpty()
         if (hours.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (h in hours) {
                     Column(
-                        Modifier.size(width = 82.dp, height = 96.dp).glassSurface(RoundedCornerShape(16.dp), Color(0x14FFFFFF)),
+                        Modifier.size(width = 74.dp, height = 86.dp).glassSurface(RoundedCornerShape(16.dp), Color(0x14FFFFFF)),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
@@ -896,7 +877,7 @@ private fun PosterFan(films: List<Movie>, posterWidth: Dp, step: Dp) {
  * Late at night ([moving] false) it stands still.
  */
 @Composable
-private fun Snowfall(modifier: Modifier, moving: Boolean) {
+internal fun Snowfall(modifier: Modifier, moving: Boolean) {
     val flakes = remember {
         val r = java.util.Random(7)
         List(60) { floatArrayOf(r.nextFloat(), r.nextFloat(), 1.2f + r.nextFloat() * 2.6f, 0.5f + r.nextFloat(), r.nextFloat()) }
@@ -925,7 +906,7 @@ private fun DrawScope.drawSnow(flakes: List<FloatArray>, t: Float) {
 
 /** A string of fairy lights along the top, twinkling softly (still, late at night). */
 @Composable
-private fun FairyLights(modifier: Modifier, moving: Boolean) {
+internal fun FairyLights(modifier: Modifier, moving: Boolean) {
     if (!moving) {
         Canvas(modifier) { drawLights(0.25f) }
         return
@@ -1010,82 +991,60 @@ private fun PhoneClockBanner(vm: AppViewModel, repo: Repository, top: Dp) {
     if (settingPlace) WeatherPlaceDialog(vm) { settingPlace = false }
     var forecast by remember { mutableStateOf(false) }
     if (forecast) ForecastDialog(vm) { forecast = false }
-    val onNow = rememberOnNow(vm, repo)
-    val night = weather?.day == false
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .bannerGlow(Triple(if (night) Color(0x8C2A3570) else Color(0x8C3D5E96), 0.85f, 0f), Triple(Color(0x55402A66), 0f, 0.9f), dim = late)
-            .padding(start = 20.dp, end = 20.dp, top = top, bottom = 12.dp)
-            .graphicsLayer { alpha = if (late) 0.78f else 1f },
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Greeting(vm, Txt.Label.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold))
-        ClockAndDate(
-            clockStyle = Txt.LargeTitle.copy(fontSize = 78.sp, lineHeight = 82.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-3).sp),
-            dateStyle = Txt.Label.copy(fontSize = 17.sp),
-            center = true,
+    val onNow = rememberOnNowList(vm, repo, count = 6)
+    Box(Modifier.fillMaxWidth()) {
+        ClockBackdrop(
+            theme = clockThemeNow(vm),
+            night = weather?.day == false,
+            moving = !late,
+            dim = late,
+            lightsTop = top - 16.dp,
+            modifier = Modifier.matchParentSize(),
         )
-        Spacer(Modifier.height(14.dp))
-        if (place != null) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                WeatherIcon(weather?.code ?: 3, weather?.day ?: true, 40.dp)
-                Spacer(Modifier.width(10.dp))
-                Text(weather?.let { "${it.temp}°" } ?: "–°", style = Txt.LargeTitle.copy(fontSize = 40.sp, lineHeight = 44.sp, fontWeight = FontWeight.SemiBold))
-            }
-            Text(
-                listOfNotNull(place.name, weather?.let { Weather.describe(it.code) }, weather?.let { "H ${it.high}°  L ${it.low}°" }).joinToString("  ·  "),
-                style = Txt.Caption.copy(fontSize = 14.sp),
-                color = Ember.Text.copy(alpha = 0.8f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = top, bottom = 12.dp)
+                .graphicsLayer { alpha = if (late) 0.8f else 1f },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Greeting(vm, Txt.Label.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold))
+            ClockAndDate(
+                clockStyle = Txt.LargeTitle.copy(fontSize = 78.sp, lineHeight = 82.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-3).sp),
+                dateStyle = Txt.Label.copy(fontSize = 17.sp),
+                center = true,
             )
-            WeatherNotes(weather, Txt.Caption.copy(fontSize = 14.sp), center = true)
-            val hours = weather?.hours.orEmpty()
-            if (hours.isNotEmpty()) {
+            if (place != null) {
                 Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (h in hours) {
-                        Column(
-                            Modifier.size(width = 58.dp, height = 76.dp).glassSurface(RoundedCornerShape(14.dp), Color(0x14FFFFFF)),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            Text(h.time, style = Txt.Caption.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold), color = Ember.Text.copy(alpha = 0.85f))
-                            Spacer(Modifier.height(4.dp))
-                            WeatherIcon(h.code, h.day, 20.dp)
-                            Spacer(Modifier.height(4.dp))
-                            Text("${h.temp}°", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = Ember.Text)
-                        }
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    WeatherIcon(weather?.code ?: 3, weather?.day ?: true, 40.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Text(weather?.let { "${it.temp}°" } ?: "–°", style = Txt.LargeTitle.copy(fontSize = 40.sp, lineHeight = 44.sp, fontWeight = FontWeight.SemiBold))
+                }
+                Text(
+                    listOfNotNull(place.name, weather?.let { Weather.describe(it.code) }, weather?.let { "H ${it.high}°  L ${it.low}°" }).joinToString("  ·  "),
+                    style = Txt.Caption.copy(fontSize = 14.sp),
+                    color = Ember.Text.copy(alpha = 0.8f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
+                WeatherNotes(weather, Txt.Caption.copy(fontSize = 14.sp), center = true)
+            }
+            Spacer(Modifier.height(14.dp))
+            if (onNow.channels.isNotEmpty()) {
+                OnNowLabel(Modifier.padding(bottom = 8.dp))
+                PhoneOnNowRow(vm, onNow) { if (place == null) settingPlace = true else forecast = true }
+            } else {
+                PillButton(if (place == null) "Add the weather" else "Forecast", primary = true) {
+                    if (place == null) settingPlace = true else forecast = true
                 }
             }
+            BannerHint("Press and hold to change what's shown here", center = true)
         }
-        val channels = onNow?.channels.orEmpty()
-        val channel = channels.firstOrNull()
-        val programme = onNow?.programme
-        if (channel != null && programme != null) {
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "On now: ${programme.title} · ${channelParts(channel.name).first}",
-                style = Txt.Caption.copy(fontSize = 14.sp),
-                color = Ember.Text.copy(alpha = 0.85f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Spacer(Modifier.height(14.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (channel != null) {
-                PillButton("Watch", icon = EmberIcons.Play, primary = true, modifier = Modifier.widthIn(min = 120.dp)) { vm.push(Screen.PlayLive(channels, 0)) }
-            }
-            PillButton(if (place == null) "Add the weather" else "Forecast", primary = channel == null) {
-                if (place == null) settingPlace = true else forecast = true
-            }
-        }
-        BannerHint("Press and hold to change what's shown here", center = true)
     }
 }
+
 
 @Composable
 private fun PhoneTeamsBanner(vm: AppViewModel, soonOnly: Boolean, top: Dp) {
@@ -1242,7 +1201,7 @@ private fun PhoneHolidayBanner(vm: AppViewModel, top: Dp) {
 
 /** "Rain likely from 21:00 · Sunset 16:01" under the weather, the rain part in blue. */
 @Composable
-private fun WeatherNotes(weather: WeatherNow?, style: TextStyle, center: Boolean = false) {
+internal fun WeatherNotes(weather: WeatherNow?, style: TextStyle, center: Boolean = false) {
     val rain = weather?.rainNote
     val sun = weather?.sunNote
     if (rain == null && sun == null) return
@@ -1509,6 +1468,7 @@ private fun PhoneResumeBanner(vm: AppViewModel, repo: Repository) {
 fun BannerPickerDialog(vm: AppViewModel, onDone: () -> Unit) {
     val isTv = LocalIsTv.current
     var settingPlace by remember { mutableStateOf(false) }
+    var choosingTheme by remember { mutableStateOf(false) }
     androidx.compose.ui.window.Dialog(onDismissRequest = onDone) {
         DialogBackdropBlur()
         Column(
@@ -1566,10 +1526,16 @@ fun BannerPickerDialog(vm: AppViewModel, onDone: () -> Unit) {
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
                 )
                 Spacer(Modifier.height(6.dp))
-                SheetSection("Weather")
+                SheetSection("Clock and weather")
                 val chevron: @Composable (Boolean) -> Unit = { dark ->
                     Icon(EmberIcons.ChevronRight, contentDescription = null, tint = if (dark) Color.Black else Ember.Dim, modifier = Modifier.size(18.dp))
                 }
+                SheetOption(
+                    "Clock background",
+                    focusKey = "banner:clocktheme",
+                    subtitle = if (vm.clockTheme == ClockTheme.AUTO) "Automatic (now: ${autoClockTheme(vm.weather).title})" else vm.clockTheme.title,
+                    trailing = chevron,
+                ) { choosingTheme = true }
                 SheetOption(
                     "Town for the weather",
                     focusKey = "banner:weather",
@@ -1580,6 +1546,7 @@ fun BannerPickerDialog(vm: AppViewModel, onDone: () -> Unit) {
         }
     }
     if (settingPlace) WeatherPlaceDialog(vm) { settingPlace = false }
+    if (choosingTheme) ClockThemeDialog(vm) { choosingTheme = false }
 }
 
 /** Type a town, then pick the right one from what's found. */

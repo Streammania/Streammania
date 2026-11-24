@@ -844,6 +844,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // Before there was a choice, the banner could only be on or off.
         bannerMode = prefs.bannerMode.ifBlank { if (FEATURED in homeHidden) BannerModes.OFF else BannerModes.AUTO }
         autoBanners = prefs.autoBanners
+        clockTheme = ClockTheme.of(prefs.clockTheme)
         Ember.backdrop = BACKDROPS.firstOrNull { it.id == prefs.backdrop } ?: BACKDROPS[0]
         Txt.scale = prefs.textScale.coerceIn(1f, 1.25f)
         HintsSetting.show = prefs.showHints
@@ -1573,6 +1574,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun chooseBanner(mode: String) {
         bannerMode = mode
         prefs.bannerMode = mode
+    }
+
+    /** The background behind the clock: Automatic (weather, time and season) or a fixed one. */
+    var clockTheme by mutableStateOf(ClockTheme.AUTO)
+        private set
+
+    fun chooseClockTheme(theme: ClockTheme) {
+        clockTheme = theme
+        prefs.clockTheme = theme.id
     }
 
     /** What Automatic and Take turns may show besides the clock ("teams", "resume", "holiday"). */

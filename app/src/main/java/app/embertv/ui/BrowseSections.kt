@@ -468,6 +468,7 @@ fun SettingsSection(vm: AppViewModel) {
     var editingTmdb by remember { mutableStateOf(false) }
     var choosingBanner by remember { mutableStateOf(false) }
     var settingWeather by remember { mutableStateOf(false) }
+    var choosingClockTheme by remember { mutableStateOf(false) }
     var tmdbDraft by remember { mutableStateOf(vm.tmdbKey) }
     val kids = vm.profile?.kids == true
     val account = vm.account
@@ -532,6 +533,12 @@ fun SettingsSection(vm: AppViewModel) {
                         focusKey = "set:weather",
                     ) { settingWeather = true }
                 }
+                SettingRow(
+                    "Clock background",
+                    if (vm.clockTheme == ClockTheme.AUTO) "Automatic" else vm.clockTheme.title,
+                    "Christmas, New Year, autumn, or with the weather",
+                    focusKey = "set:clocktheme",
+                ) { choosingClockTheme = true }
                 if (isTv) {
                     SettingRow(
                         "Artwork behind Home",
@@ -866,6 +873,7 @@ fun SettingsSection(vm: AppViewModel) {
     if (linkingTvs) LinkedTvsDialog(vm) { linkingTvs = false }
     if (choosingBanner) BannerPickerDialog(vm) { choosingBanner = false }
     if (settingWeather) WeatherPlaceDialog(vm) { settingWeather = false }
+    if (choosingClockTheme) ClockThemeDialog(vm) { choosingClockTheme = false }
     if (editingTmdb) {
         TextEntryDialog(
             title = "TMDB API key or Read Access Token (themoviedb.org → Settings → API). Leave empty to turn off.",
