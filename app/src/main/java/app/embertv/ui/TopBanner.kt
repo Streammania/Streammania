@@ -9,6 +9,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -74,6 +76,10 @@ import app.embertv.data.Movie
 import app.embertv.data.Programme
 import app.embertv.data.Repository
 import app.embertv.data.TeamScore
+import app.embertv.data.Team
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.KeyEventType
 import app.embertv.data.Weather
 import app.embertv.data.WeatherNow
 import app.embertv.data.WeatherPlace
@@ -277,7 +283,7 @@ fun TvTopBanner(vm: AppViewModel, repo: Repository) {
         Crossfade(targetState = kind, label = "banner") { k ->
             when (k) {
                 BannerKind.CLOCK -> TvClockBanner(vm, repo) { picking = true }
-                BannerKind.TEAMS -> TvTeamsBanner(vm) { picking = true }
+                BannerKind.TEAMS -> TvTeamsBanner(vm, soonOnly = vm.bannerMode == BannerModes.AUTO) { picking = true }
                 BannerKind.HOLIDAY -> TvHolidayBanner(vm) { picking = true }
                 BannerKind.RESUME -> TvResumeBanner(vm, repo) { picking = true }
             }
@@ -441,12 +447,94 @@ private fun matchChannel(vm: AppViewModel, m: Match): String? =
     vm.liveSport.firstOrNull { it.match.id == m.id }?.hits?.firstOrNull()?.channel?.name?.let { channelParts(it).first }
         ?: vm.fixtureChannels[m.id]?.ifEmpty { null }
 
+/** A team's game for the banner: live, else the next one, else the last result. */
+private fun teamMatch(vm: AppViewModel, team: Team): Match? {
+    val nowMs = System.currentTimeMillis()
+    val games = vm.teamMatches.filter { it.home.id == team.id || it.away.id == team.id }
+    games.firstOrNull { it.state == MatchState.LIVE }?.let { return it }
+    games.filter { it.state == MatchState.UPCOMING && it.kickoff > nowMs - 15 * 60_000L }.minByOrNull { it.kickoff }?.let { return it }
+    return games.filter { it.state == MatchState.FINISHED }.maxByOrNull { it.kickoff }
+}
+
+/**
+ * The teams the banner takes turns with: those playing right now if any are; otherwise, for
+ * Automatic ([soonOnly]), those kicking off in the next three hours; otherwise all of them.
+ */
+private fun bannerTeams(vm: AppViewModel, soonOnly: Boolean): List<Team> {
+    val nowMs = System.currentTimeMillis()
+    val teams = vm.followedTeams.toList()
+    val live = teams.filter { teamMatch(vm, it)?.state == MatchState.LIVE }
+    if (live.isNotEmpty()) return live
+    if (soonOnly) {
+        val soon = teams.filter { t -> teamMatch(vm, t)?.let { it.state == MatchState.UPCOMING && it.kickoff - nowMs < 3 * 3_600_000L } == true }
+        if (soon.isNotEmpty()) return soon
+    }
+    return teams
+}
+
+/** Which of [count] teams is showing: the next one every ten seconds, unless [paused]. */
 @Composable
-private fun TvTeamsBanner(vm: AppViewModel, onCustomise: () -> Unit) {
-    val match = bannerMatch(vm, soonOnly = false)
+private fun rememberTeamTurn(count: Int, paused: Boolean): Pair<Int, (Int) -> Unit> {
+    var index by remember { mutableIntStateOf(0) }
+    LaunchedEffect(count, paused, index) {
+        if (count <= 1 || paused) return@LaunchedEffect
+        delay(10_000)
+        index = (index + 1) % count
+    }
+    val safe = if (count == 0) 0 else index.mod(count)
+    return safe to { i: Int -> index = if (count == 0) 0 else i.mod(count) }
+}
+
+/** Your teams' crests in a little glass strip, the one showing lit up. Tapping one (on a phone) shows it. */
+@Composable
+private fun TeamTurns(teams: List<Team>, index: Int, onPick: ((Int) -> Unit)?) {
+    if (teams.size <= 1) return
+    Row(
+        Modifier
+            .padding(top = 12.dp)
+            .glassSurface(RoundedCornerShape(16.dp), Color(0x14FFFFFF))
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        teams.forEachIndexed { i, t ->
+            val on = i == index
+            Box(
+                Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(if (on) Color(0x33FFFFFF) else Color.Transparent)
+                    .then(if (onPick != null) Modifier.pointerInput(i) { detectTapGestures { onPick(i) } } else Modifier)
+                    .graphicsLayer { alpha = if (on) 1f else 0.4f },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (t.logo.isNotBlank()) {
+                    NetImage(t.logo, Modifier.size(if (on) 20.dp else 17.dp), androidx.compose.ui.layout.ContentScale.Fit)
+                } else {
+                    Text(t.shortName.take(1), style = Txt.Caption.copy(fontWeight = FontWeight.Bold))
+                }
+            }
+        }
+    }
+}
+
+private fun Team.asScore(): TeamScore = TeamScore(name, shortName, logo, "", id)
+
+@Composable
+private fun TvTeamsBanner(vm: AppViewModel, soonOnly: Boolean, onCustomise: () -> Unit) {
+    val teams = bannerTeams(vm, soonOnly)
+    var focused by remember { mutableStateOf(false) }
+    val (index, setIndex) = rememberTeamTurn(teams.size, paused = focused)
+    val team = teams.getOrNull(index)
+    val match = team?.let { teamMatch(vm, it) }
     LaunchedEffect(match?.id) { match?.let { vm.lookUpFixtureChannel(it) } }
     val live = match?.state == MatchState.LIVE
     val hero = LocalHomeEntry.current?.hero
+    val scope = rememberCoroutineScope()
+    var mainFocused by remember { mutableStateOf(false) }
+    var findFocused by remember { mutableStateOf(false) }
+    val soon = match?.state == MatchState.UPCOMING && match.kickoff - System.currentTimeMillis() < 15 * 60_000L
+    val showFind = match?.state == MatchState.UPCOMING && !soon
     Box(
         Modifier
             .fillMaxWidth()
@@ -461,80 +549,138 @@ private fun TvTeamsBanner(vm: AppViewModel, onCustomise: () -> Unit) {
             verticalAlignment = Alignment.Bottom,
         ) {
             Column(Modifier.weight(1f)) {
-                if (match == null) {
-                    Text("YOUR TEAMS", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim)
-                    Spacer(Modifier.height(6.dp))
-                    Text(if (vm.followedTeams.isEmpty()) "Follow your teams" else "No games coming up", style = Txt.LargeTitle)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        if (vm.followedTeams.isEmpty()) "Choose your teams in Settings → Sport, and their games show here with live scores and where to watch."
-                        else "Your teams' next games show here once they're on the fixture list.",
-                        style = Txt.Body,
-                        color = Ember.Text.copy(alpha = 0.85f),
-                        maxLines = 2,
-                        modifier = Modifier.widthIn(max = 560.dp),
-                    )
-                    Spacer(Modifier.height(18.dp))
-                    TvButton("Choose teams", focusKey = "home:banner:teams", requester = hero, onLongClick = onCustomise) { vm.tab = Tabs.SETTINGS }
-                } else {
-                    MatchEyebrow(match)
-                    Spacer(Modifier.height(14.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        BannerCrest(match.home, 84.dp)
-                        Spacer(Modifier.width(22.dp))
-                        if (match.state != MatchState.UPCOMING && match.home.score.isNotBlank()) {
-                            Text("${match.home.score} – ${match.away.score}", style = Txt.LargeTitle.copy(fontSize = 54.sp, lineHeight = 58.sp, fontWeight = FontWeight.Bold))
-                        } else {
-                            Text("v", style = Txt.LargeTitle.copy(fontSize = 34.sp), color = Ember.Dim)
-                        }
-                        Spacer(Modifier.width(22.dp))
-                        BannerCrest(match.away, 84.dp)
-                    }
-                    Spacer(Modifier.height(14.dp))
-                    Text("${match.home.name} v ${match.away.name}", style = Txt.Title.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(4.dp))
-                    val channel = matchChannel(vm, match)
-                    Text(
-                        listOfNotNull(match.league.name, channel?.let { "On $it" }).joinToString("  ·  "),
-                        style = Txt.Label,
-                        color = Ember.Dim,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    // And the one after.
-                    val after = vm.teamMatches.filter { vm.isFollowedMatch(it) && it.id != match.id && it.state == MatchState.UPCOMING }.minByOrNull { it.kickoff }
-                    if (after != null) {
-                        Text(
-                            "Next: ${formatDay(after.kickoff / 1000)} ${formatClock(after.kickoff / 1000)}  ·  ${after.home.shortName} v ${after.away.shortName}",
-                            style = Txt.Caption,
-                            color = Ember.Faint,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        val soon = match.state == MatchState.UPCOMING && match.kickoff - System.currentTimeMillis() < 15 * 60_000L
+                Crossfade(targetState = team to match, label = "team") { (team, match) ->
+                    Column {
                         when {
-                            live || soon -> TvButton("Watch", icon = "▶", focusKey = "home:banner:watch", requester = hero, onLongClick = onCustomise) { vm.watchKickoff(match) }
-                            match.state == MatchState.UPCOMING -> TvButton(
-                                if (vm.hasMatchReminder(match)) "Reminder on" else "Remind me",
-                                focusKey = "home:banner:remind",
-                                requester = hero,
-                                onLongClick = onCustomise,
-                            ) { vm.toggleMatchReminder(match) }
-                            else -> TvButton("Your teams", focusKey = "home:banner:teams", requester = hero, onLongClick = onCustomise) { vm.tab = Tabs.SETTINGS }
+                            team == null -> {
+                                Text("YOUR TEAMS", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim)
+                                Spacer(Modifier.height(6.dp))
+                                Text("Follow your teams", style = Txt.LargeTitle)
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    "Choose your teams in Settings → Sport, and their games show here with live scores and where to watch.",
+                                    style = Txt.Body,
+                                    color = Ember.Text.copy(alpha = 0.85f),
+                                    maxLines = 2,
+                                    modifier = Modifier.widthIn(max = 560.dp),
+                                )
+                            }
+                            match == null -> {
+                                Text("YOUR TEAMS", style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp), color = Ember.Dim)
+                                Spacer(Modifier.height(14.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    BannerCrest(team.asScore(), 84.dp)
+                                    Spacer(Modifier.width(20.dp))
+                                    Column {
+                                        Text(team.name, style = Txt.LargeTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text("No games in the next few weeks", style = Txt.Label, color = Ember.Dim)
+                                    }
+                                }
+                            }
+                            else -> {
+                                MatchEyebrow(match)
+                                Spacer(Modifier.height(14.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    BannerCrest(match.home, 84.dp)
+                                    Spacer(Modifier.width(22.dp))
+                                    if (match.state != MatchState.UPCOMING && match.home.score.isNotBlank()) {
+                                        Text("${match.home.score} – ${match.away.score}", style = Txt.LargeTitle.copy(fontSize = 54.sp, lineHeight = 58.sp, fontWeight = FontWeight.Bold))
+                                    } else {
+                                        Text("v", style = Txt.LargeTitle.copy(fontSize = 34.sp), color = Ember.Dim)
+                                    }
+                                    Spacer(Modifier.width(22.dp))
+                                    BannerCrest(match.away, 84.dp)
+                                }
+                                Spacer(Modifier.height(14.dp))
+                                Text("${match.home.name} v ${match.away.name}", style = Txt.Title.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Spacer(Modifier.height(4.dp))
+                                val channel = matchChannel(vm, match)
+                                Text(
+                                    listOfNotNull(match.league.name, channel?.let { "On $it" }).joinToString("  ·  "),
+                                    style = Txt.Label,
+                                    color = Ember.Dim,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                // And this team's game after that.
+                                val after = vm.teamMatches
+                                    .filter { (it.home.id == team.id || it.away.id == team.id) && it.id != match.id && it.state == MatchState.UPCOMING && it.kickoff > match.kickoff }
+                                    .minByOrNull { it.kickoff }
+                                if (after != null) {
+                                    Text(
+                                        "Next: ${formatDay(after.kickoff / 1000)} ${formatClock(after.kickoff / 1000)}  ·  ${after.home.shortName} v ${after.away.shortName}",
+                                        style = Txt.Caption,
+                                        color = Ember.Faint,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = 4.dp),
+                                    )
+                                }
+                            }
                         }
-                        if (match.state == MatchState.UPCOMING && !soon) {
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                // The buttons stay put as the teams change, so the highlight never gets lost.
+                // ◀ on the first and ▶ on the last move between your teams.
+                Row(
+                    Modifier
+                        .onFocusChanged { focused = it.hasFocus }
+                        .onPreviewKeyEvent { ev ->
+                            if (ev.type != KeyEventType.KeyDown || teams.size <= 1) return@onPreviewKeyEvent false
+                            val atLast = if (showFind) findFocused else mainFocused
+                            when (ev.nativeKeyEvent.keyCode) {
+                                android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> if (atLast) {
+                                    setIndex(index + 1)
+                                    // The second button may not be there for the next team.
+                                    scope.launch {
+                                        delay(30)
+                                        runCatching { hero?.requestFocus() }
+                                    }
+                                    true
+                                } else false
+                                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> if (mainFocused) {
+                                    setIndex(index - 1)
+                                    true
+                                } else false
+                                else -> false
+                            }
+                        },
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    val reminded = match != null && vm.hasMatchReminder(match)
+                    Box(Modifier.onFocusChanged { mainFocused = it.hasFocus }) {
+                        TvButton(
+                            when {
+                                team == null -> "Choose teams"
+                                match == null -> "Your teams"
+                                live || soon -> "Watch"
+                                match.state == MatchState.UPCOMING -> if (reminded) "Reminder on" else "Remind me"
+                                else -> "Your teams"
+                            },
+                            icon = if (live || soon) "▶" else null,
+                            focusKey = "home:banner:teams",
+                            requester = hero,
+                            onLongClick = onCustomise,
+                        ) {
+                            when {
+                                match != null && (live || soon) -> vm.watchKickoff(match)
+                                match != null && match.state == MatchState.UPCOMING -> vm.toggleMatchReminder(match)
+                                else -> vm.tab = Tabs.SETTINGS
+                            }
+                        }
+                    }
+                    if (showFind && match != null) {
+                        Box(Modifier.onFocusChanged { findFocused = it.hasFocus }) {
                             TvButton("Where's it on?", focusKey = "home:banner:find", onLongClick = onCustomise) { vm.findingMatch = match }
                         }
                     }
                 }
-                BannerHint("Hold OK to change what's shown here")
+                TeamTurns(teams, index, onPick = null)
+                BannerHint(if (teams.size > 1) "◀ ▶ for your other teams   ·   Hold OK to change what's shown here" else "Hold OK to change what's shown here")
             }
-            // Where your team stands, on the right.
-            LeagueTableCard(vm, match, Modifier.width(300.dp).padding(bottom = 4.dp), rows = 5)
+            // Where this team stands, on the right.
+            LeagueTableCard(vm, team, Modifier.width(300.dp).padding(bottom = 4.dp), rows = 5)
         }
     }
 }
@@ -742,7 +888,7 @@ fun PhoneTopBanner(vm: AppViewModel, repo: Repository) {
         Crossfade(targetState = kind, label = "banner") { k ->
             when (k) {
                 BannerKind.CLOCK -> PhoneClockBanner(vm, repo, top)
-                BannerKind.TEAMS -> PhoneTeamsBanner(vm, top)
+                BannerKind.TEAMS -> PhoneTeamsBanner(vm, soonOnly = vm.bannerMode == BannerModes.AUTO, top = top)
                 BannerKind.HOLIDAY -> PhoneHolidayBanner(vm, top)
                 BannerKind.RESUME -> PhoneResumeBanner(vm, repo)
             }
@@ -847,79 +993,99 @@ private fun PhoneClockBanner(vm: AppViewModel, repo: Repository, top: Dp) {
 }
 
 @Composable
-private fun PhoneTeamsBanner(vm: AppViewModel, top: Dp) {
-    val match = bannerMatch(vm, soonOnly = false)
+private fun PhoneTeamsBanner(vm: AppViewModel, soonOnly: Boolean, top: Dp) {
+    val teams = bannerTeams(vm, soonOnly)
+    val (index, setIndex) = rememberTeamTurn(teams.size, paused = false)
+    val latestIndex by androidx.compose.runtime.rememberUpdatedState(index)
+    val latestSet by androidx.compose.runtime.rememberUpdatedState(setIndex)
+    val team = teams.getOrNull(index)
+    val match = team?.let { teamMatch(vm, it) }
     LaunchedEffect(match?.id) { match?.let { vm.lookUpFixtureChannel(it) } }
     val live = match?.state == MatchState.LIVE
     Column(
         Modifier
             .fillMaxWidth()
             .bannerGlow(Triple(if (live) Color(0x66C8202D) else Color(0x5532508C), 0.1f, 0.2f), Triple(Color(0x552A46A0), 0.9f, 0.1f))
+            // Swipe sideways for your other teams.
+            .pointerInput(teams.size) {
+                var travelled = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { travelled = 0f },
+                    onDragEnd = {
+                        if (travelled < -60f) latestSet(latestIndex + 1) else if (travelled > 60f) latestSet(latestIndex - 1)
+                    },
+                    onHorizontalDrag = { change, dx ->
+                        change.consume()
+                        travelled += dx
+                    },
+                )
+            }
             .padding(start = 20.dp, end = 20.dp, top = top, bottom = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        if (match == null) {
-            Text(if (vm.followedTeams.isEmpty()) "Follow your teams" else "No games coming up", style = Txt.Title.copy(fontWeight = FontWeight.Bold))
-            Spacer(Modifier.height(6.dp))
-            Text(
-                if (vm.followedTeams.isEmpty()) "Choose your teams in Settings → Sport, and their games show here." else "Their next games show here once they're on the fixture list.",
-                style = Txt.Caption.copy(fontSize = 14.sp),
-                color = Ember.Text.copy(alpha = 0.8f),
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(14.dp))
-            PillButton("Choose teams", primary = true) { vm.tab = Tabs.SETTINGS }
-        } else {
-            MatchEyebrow(match)
-            Spacer(Modifier.height(14.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                BannerCrest(match.home, 64.dp)
-                Spacer(Modifier.width(18.dp))
-                if (match.state != MatchState.UPCOMING && match.home.score.isNotBlank()) {
-                    Text("${match.home.score} – ${match.away.score}", style = Txt.LargeTitle.copy(fontSize = 40.sp, lineHeight = 44.sp, fontWeight = FontWeight.Bold))
-                } else {
-                    Text("v", style = Txt.Title, color = Ember.Dim)
-                }
-                Spacer(Modifier.width(18.dp))
-                BannerCrest(match.away, 64.dp)
-            }
-            Spacer(Modifier.height(10.dp))
-            Text("${match.home.shortName} v ${match.away.shortName}", style = Txt.Title.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val channel = matchChannel(vm, match)
-            Text(
-                listOfNotNull(match.league.name, channel?.let { "On $it" }).joinToString("  ·  "),
-                style = Txt.Caption.copy(fontSize = 14.sp),
-                color = Ember.Text.copy(alpha = 0.8f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(14.dp))
-            val soon = match.state == MatchState.UPCOMING && match.kickoff - System.currentTimeMillis() < 15 * 60_000L
-            when {
-                live || soon -> PillButton("Watch", icon = EmberIcons.Play, primary = true, modifier = Modifier.widthIn(min = 150.dp)) { vm.watchKickoff(match) }
-                match.state == MatchState.UPCOMING -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PillButton(if (vm.hasMatchReminder(match)) "Reminder on" else "Remind me", icon = EmberIcons.Bell, primary = true) { vm.toggleMatchReminder(match) }
-                    PillButton("Where's it on?") { vm.findingMatch = match }
-                }
-                else -> {}
-            }
-            val others = vm.teamMatches.filter { vm.isFollowedMatch(it) && it.id != match.id && it.state == MatchState.UPCOMING }.take(2)
-            if (others.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
-                for (m in others) {
-                    Text(
-                        "${formatDay(m.kickoff / 1000)} ${formatClock(m.kickoff / 1000)}  ·  ${m.home.shortName} v ${m.away.shortName}",
-                        style = Txt.Caption,
-                        color = Ember.Dim,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+        Crossfade(targetState = team to match, label = "team") { (team, match) ->
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                when {
+                    team == null -> {
+                        Text("Follow your teams", style = Txt.Title.copy(fontWeight = FontWeight.Bold))
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Choose your teams in Settings → Sport, and their games show here.",
+                            style = Txt.Caption.copy(fontSize = 14.sp),
+                            color = Ember.Text.copy(alpha = 0.8f),
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        PillButton("Choose teams", primary = true) { vm.tab = Tabs.SETTINGS }
+                    }
+                    match == null -> {
+                        BannerCrest(team.asScore(), 64.dp)
+                        Spacer(Modifier.height(10.dp))
+                        Text(team.name, style = Txt.Title.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("No games in the next few weeks", style = Txt.Caption.copy(fontSize = 14.sp), color = Ember.Dim)
+                    }
+                    else -> {
+                        MatchEyebrow(match)
+                        Spacer(Modifier.height(14.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            BannerCrest(match.home, 64.dp)
+                            Spacer(Modifier.width(18.dp))
+                            if (match.state != MatchState.UPCOMING && match.home.score.isNotBlank()) {
+                                Text("${match.home.score} – ${match.away.score}", style = Txt.LargeTitle.copy(fontSize = 40.sp, lineHeight = 44.sp, fontWeight = FontWeight.Bold))
+                            } else {
+                                Text("v", style = Txt.Title, color = Ember.Dim)
+                            }
+                            Spacer(Modifier.width(18.dp))
+                            BannerCrest(match.away, 64.dp)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text("${match.home.shortName} v ${match.away.shortName}", style = Txt.Title.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val channel = matchChannel(vm, match)
+                        Text(
+                            listOfNotNull(match.league.name, channel?.let { "On $it" }).joinToString("  ·  "),
+                            style = Txt.Caption.copy(fontSize = 14.sp),
+                            color = Ember.Text.copy(alpha = 0.8f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        val soon = match.state == MatchState.UPCOMING && match.kickoff - System.currentTimeMillis() < 15 * 60_000L
+                        when {
+                            live || soon -> PillButton("Watch", icon = EmberIcons.Play, primary = true, modifier = Modifier.widthIn(min = 150.dp)) { vm.watchKickoff(match) }
+                            match.state == MatchState.UPCOMING -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                PillButton(if (vm.hasMatchReminder(match)) "Reminder on" else "Remind me", icon = EmberIcons.Bell, primary = true) { vm.toggleMatchReminder(match) }
+                                PillButton("Where's it on?") { vm.findingMatch = match }
+                            }
+                            else -> {}
+                        }
+                    }
                 }
             }
         }
+        TeamTurns(teams, index, onPick = { setIndex(it) })
         Spacer(Modifier.height(12.dp))
-        LeagueTableCard(vm, match, Modifier.fillMaxWidth(), rows = 5)
-        BannerHint("Press and hold to change what's shown here", center = true)
+        LeagueTableCard(vm, team, Modifier.fillMaxWidth(), rows = 5)
+        BannerHint(if (teams.size > 1) "Swipe for your other teams · press and hold to change what's shown here" else "Press and hold to change what's shown here", center = true)
     }
 }
 
@@ -1045,12 +1211,11 @@ private fun HeadlinePill(vm: AppViewModel, onCustomise: (() -> Unit)?) {
 }
 
 /**
- * Where your team stands: a few lines of the league table around them, your team lit up. For
- * the team playing in [match], or your first team.
+ * Where [team] stands: a few lines of its league table around it, the team lit up.
  */
 @Composable
-private fun LeagueTableCard(vm: AppViewModel, match: Match?, modifier: Modifier, rows: Int) {
-    val team = vm.followedTeams.firstOrNull { it.id == match?.home?.id || it.id == match?.away?.id } ?: vm.followedTeams.firstOrNull() ?: return
+private fun LeagueTableCard(vm: AppViewModel, team: Team?, modifier: Modifier, rows: Int) {
+    if (team == null) return
     LaunchedEffect(team.league) { vm.ensureLeagueTable(team.league) }
     val tables = vm.leagueTables[team.league].orEmpty()
     val table = tables.firstOrNull { t -> t.any { it.teamId == team.id } } ?: return
