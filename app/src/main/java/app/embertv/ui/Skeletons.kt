@@ -172,3 +172,19 @@ fun SkeletonLines(modifier: Modifier = Modifier, widths: List<Float> = listOf(0.
         for (w in widths) Block(Modifier.fillMaxWidth(w).height(lineHeight), radius = lineHeight / 2)
     }
 }
+
+/**
+ * One Home row still on its way: a title and a line of poster shapes, the same size as the row
+ * that replaces it, gently breathing. Home shows these while the provider's rows load.
+ */
+@Composable
+fun SkeletonPosterRow(edge: Dp, posterWidth: Dp, gap: Dp) {
+    val pulse = rememberPulse()
+    Column(Modifier.fillMaxWidth().graphicsLayer { alpha = pulse }.padding(top = 20.dp, bottom = 12.dp)) {
+        Block(Modifier.padding(start = edge).width(170.dp).height(16.dp), radius = 8.dp)
+        Spacer(Modifier.height(16.dp))
+        Row(Modifier.fillMaxWidth().padding(start = edge), horizontalArrangement = Arrangement.spacedBy(gap)) {
+            repeat(8) { Block(Modifier.width(posterWidth).aspectRatio(2f / 3f), radius = 12.dp) }
+        }
+    }
+}

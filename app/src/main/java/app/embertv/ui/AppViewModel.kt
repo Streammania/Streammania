@@ -793,6 +793,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         account = null
         repo = null
         accountInfo = null
+        HomeCache.clear(getApplication())
         resetBrowsing()
     }
 
@@ -992,6 +993,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun reload() {
         repo?.clearCaches()
+        // Refresh everything means fresh rows, not last time's.
+        HomeCache.clear(getApplication())
         vodCheckedAt = System.currentTimeMillis()
         reloadToken++
     }
@@ -1649,6 +1652,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (holidayPicks?.holiday != holiday) holidayPicks = null
         viewModelScope.launch {
             delay(1_000)
+            waitForHomeRows()
             waitForQuiet()
             val picks = try {
                 val cats = r.movieCategories().filter { holiday.groupWords.containsMatchIn(it.name) }.take(2)
@@ -1829,6 +1833,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }.asCoroutineDispatcher()
     }
 
+    /**
+     * Waits (up to ten seconds) for Home's own rows to come in, so the extras worked out
+     * alongside (New Episodes, the holiday's films, TMDB's trending) don't slow Home's opening.
+     */
+    private suspend fun waitForHomeRows() {
+        var waited = 0
+        while (waited < 10_000 && (homeFeed as? LoadResult.Ok)?.value?.loading?.isNotEmpty() == true) {
+            delay(300)
+            waited += 300
+        }
+    }
+
     /** Waits while something is playing or the app is in the background. Background jobs call it first. */
     private suspend fun waitForQuiet() {
         while (playerOpen || !appVisible) delay(3_000)
@@ -1854,6 +1870,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         featuredJob = viewModelScope.launch {
             // Home's own rows first, and never while something's playing.
             delay(1_500)
+            waitForHomeRows()
             waitForQuiet()
             val picks = try {
                 pickFeatured(r)
@@ -2057,6 +2074,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         homeExtrasFor = key
         homeExtrasJob?.cancel()
         homeExtrasJob = viewModelScope.launch {
+            waitForHomeRows()
             waitForQuiet()
             val fresh = newEpisodesFor(r)
             val (becauseOf, because) = becauseYouWatched(r)
@@ -2376,6 +2394,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Which saved Home belongs to this account and profile. */
+    private fun homeCacheKey(): String {
+        val acc = account
+        return "${acc?.server}|${acc?.username}|${profile?.id}".hashCode().toUInt().toString(16)
+    }
+
+    private fun saveHome(feed: HomeFeed) {
+        val key = homeCacheKey()
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { HomeCache.write(ctx, key, feed) }
+    }
+
     /** Re-builds Home in the background and swaps it in, keeping what's on screen meanwhile. */
     private fun refreshHomeQuietly() {
         val r = repo ?: return
@@ -2383,7 +2413,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val feed = loadHomeFeed(r)
-                if (repo === r) homeFeed = LoadResult.Ok(feed)
+                if (repo === r) {
+                    homeFeed = LoadResult.Ok(feed)
+                    saveHome(feed)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -2399,16 +2432,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (homeFor == key && homeFeed !is LoadResult.Err) return
         homeFor = key
         homeJob?.cancel()
-        homeFeed = LoadResult.Loading
+        // Home opens straight away: its own rows (Continue Watching, your channels, the banner) need
+        // nothing from the provider, and the provider's rows show a placeholder while they load.
+        homeFeed = LoadResult.Ok(HomeFeed.loadingAll())
+        val cacheKey = homeCacheKey()
+        val ctx = getApplication<Application>()
         homeJob = viewModelScope.launch {
-            homeFeed = try {
-                LoadResult.Ok(loadHomeFeed(r))
+            // Last time's rows, if they were saved: Home is filled in at once, then quietly updated.
+            val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { HomeCache.read(ctx, cacheKey) }
+            if (saved != null && repo === r) homeFeed = LoadResult.Ok(saved)
+            try {
+                // Without saved rows, each part shows as soon as it's in; with them, the new rows
+                // swap in together once they're all here, so nothing flickers.
+                val feed = loadHomeFeed(r, onProgress = if (saved == null) { f -> if (repo === r) homeFeed = LoadResult.Ok(f) } else null)
+                if (repo === r) {
+                    homeFeed = LoadResult.Ok(feed)
+                    saveHome(feed)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                LoadResult.Err(e.message ?: "Something went wrong.")
+                // Keep last time's rows if there were any; otherwise say so where they'd be.
+                if (saved == null) homeFeed = LoadResult.Err(e.message ?: "Something went wrong.")
             } catch (e: OutOfMemoryError) {
-                LoadResult.Err("That list is too big for this device to load all at once.")
+                if (saved == null) homeFeed = LoadResult.Err("That list is too big for this device to load all at once.")
             }
         }
     }
@@ -3383,7 +3430,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         sportJob = viewModelScope.launch {
             // Let Home's own rows start first; the sport search can wait a moment.
             var waited = 0
-            while (homeFeed is LoadResult.Loading && waited < 6_000) {
+            while ((homeFeed is LoadResult.Loading || (homeFeed as? LoadResult.Ok)?.value?.loading?.isNotEmpty() == true) && waited < 6_000) {
                 kotlinx.coroutines.delay(500)
                 waited += 500
             }

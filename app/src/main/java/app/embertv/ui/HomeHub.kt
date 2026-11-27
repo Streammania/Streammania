@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.WindowInsets
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.async
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
@@ -89,7 +90,22 @@ class HomeFeed(
     val recent: List<Any> = emptyList(),
     /** The films in the provider's own Trending group (Films), in its order. */
     val trending: List<Movie> = emptyList(),
-)
+    /**
+     * The parts still on their way ("trending", "live", "movies", "series"): their rows show a
+     * soft placeholder meanwhile, so Home can open before the provider has answered.
+     */
+    val loading: Set<String> = emptySet(),
+) {
+    companion object {
+        val SECTIONS = setOf("trending", "live", "movies", "series")
+
+        /** Home before anything has come back: every provider row still loading. */
+        fun loadingAll() = HomeFeed(emptyList(), null, emptyList(), emptyList(), loading = SECTIONS)
+
+        /** Home when the provider couldn't be reached: only the rows that don't need it. */
+        val NONE = HomeFeed(emptyList(), null, emptyList(), emptyList())
+    }
+}
 
 /** The provider's trending film group by its name; failing that, its popular or Top 10 group. */
 private val TRENDING_GROUP = Regex("(?i)trending")
@@ -103,48 +119,98 @@ private suspend fun <T> orNull(block: suspend () -> T): T? = try {
     null
 }
 
-/** Builds the Home rows from the provider's first few categories. Each piece is optional. */
-internal suspend fun loadHomeFeed(repo: Repository): HomeFeed = kotlinx.coroutines.coroutineScope {
-    // The lists are fetched a few at a time rather than one after another, which is much quicker.
+/**
+ * Builds Home's provider rows: Trending Now, one Live row, three film rows and two series rows.
+ * Only the lists those rows show are fetched (a category that turns out empty is skipped for the
+ * next), four at a time, and each part is handed to [onProgress] as soon as it's in, so the rows
+ * fill in one by one instead of all waiting for the slowest. Each piece is optional.
+ */
+internal suspend fun loadHomeFeed(repo: Repository, onProgress: ((HomeFeed) -> Unit)? = null): HomeFeed = kotlinx.coroutines.coroutineScope {
     val gate = kotlinx.coroutines.sync.Semaphore(4)
     suspend fun <T> limited(block: suspend () -> T): T = gate.withPermit { block() }
-    val allMovieCats = async { orNull { repo.movieCategories() }.orEmpty() }
-    val movieCats = async { allMovieCats.await().take(8) }
-    val seriesCats = async { orNull { repo.seriesCategories() }.orEmpty().take(5) }
-    val liveCats = async { orNull { repo.liveCategories() }.orEmpty().take(3) }
-    // A few more categories than the rows need, so the banner's newest films have more to choose from.
-    val movieLists = movieCats.await().map { c -> async { c to limited { orNull { repo.movies(c.id) }.orEmpty() } } }
-    val seriesLists = seriesCats.await().map { c -> async { c to limited { orNull { repo.series(c.id) }.orEmpty() } } }
-    val liveLists = liveCats.await().map { c -> async { c to limited { orNull { repo.channels(c.id) }.orEmpty() } } }
-    // The Trending group from Films, wherever it sits in the list.
-    val trendingCats = allMovieCats.await().let { cats ->
-        cats.filter { TRENDING_GROUP.containsMatchIn(it.name) }.ifEmpty { cats.filter { POPULAR_GROUP.containsMatchIn(it.name) } }
-    }.take(2)
-    val trendingLists = trendingCats.map { c -> async { limited { orNull { repo.movies(c.id) }.orEmpty() } } }
+    val movieCats = async { orNull { repo.movieCategories() }.orEmpty() }
+    val seriesCats = async { orNull { repo.seriesCategories() }.orEmpty() }
+    val liveCats = async { orNull { repo.liveCategories() }.orEmpty() }
 
-    val movieRows = ArrayList<Pair<Category, List<Movie>>>()
+    var trending: List<Movie> = emptyList()
+    var liveRow: Pair<Category, List<Channel>>? = null
+    var movieRows: List<Pair<Category, List<Movie>>> = emptyList()
+    var seriesRows: List<Pair<Category, List<Series>>> = emptyList()
     val recentMovies = ArrayList<Movie>()
-    for ((c, items) in movieLists.awaitAll()) {
-        recentMovies += items
-        if (items.isNotEmpty() && movieRows.size < 3) movieRows.add(c to items.sortedByDescending { it.added }.take(24))
-    }
-    val seriesRows = ArrayList<Pair<Category, List<Series>>>()
     val recentSeries = ArrayList<Series>()
-    for ((c, items) in seriesLists.awaitAll()) {
-        recentSeries += items
-        if (items.isNotEmpty() && seriesRows.size < 2) seriesRows.add(c to items.take(24))
+    val loading = HomeFeed.SECTIONS.toMutableSet()
+
+    fun snapshot(): HomeFeed {
+        val recent: List<Any> = (
+            recentMovies.filter { it.added > 0 }.distinctBy { it.streamId }.map { it.added to (it as Any) } +
+                recentSeries.filter { it.updated > 0 }.distinctBy { it.seriesId }.map { it.updated to (it as Any) }
+            ).sortedByDescending { it.first }.take(24).map { it.second }
+        val heroes = movieRows.firstOrNull()?.second.orEmpty().filter { it.poster.isNotBlank() }.take(6)
+        return HomeFeed(heroes, liveRow, movieRows, seriesRows, recent, trending, loading.toSet())
     }
-    val recent: List<Any> = (
-        recentMovies.filter { it.added > 0 }.distinctBy { it.streamId }.map { it.added to (it as Any) } +
-            recentSeries.filter { it.updated > 0 }.distinctBy { it.seriesId }.map { it.updated to (it as Any) }
-        ).sortedByDescending { it.first }.take(24).map { it.second }
-    val liveRow: Pair<Category, List<Channel>>? = liveLists.awaitAll().firstOrNull { it.second.isNotEmpty() }?.let { (c, items) -> c to items.take(20) }
-    val heroes = movieRows.firstOrNull()?.second.orEmpty().filter { it.poster.isNotBlank() }.take(6)
-    if (heroes.isEmpty() && movieRows.isEmpty() && seriesRows.isEmpty() && liveRow == null) {
+    fun done(section: String) {
+        loading -= section
+        onProgress?.invoke(snapshot())
+    }
+
+    // Up to [want] categories that have something in them, in their order, trying at most [tries].
+    suspend fun <T> firstFilled(cats: List<Category>, want: Int, tries: Int, fetch: suspend (Category) -> List<T>): List<Pair<Category, List<T>>> {
+        val out = ArrayList<Pair<Category, List<T>>>()
+        val limit = minOf(cats.size, tries)
+        var next = 0
+        while (out.size < want && next < limit) {
+            val batch = cats.subList(next, minOf(limit, next + want - out.size))
+            next += batch.size
+            out += batch.map { c -> async { c to limited { orNull { fetch(c) }.orEmpty() } } }.awaitAll().filter { it.second.isNotEmpty() }
+        }
+        return out
+    }
+
+    listOf(
+        // Trending Now sits near the top, so it goes first.
+        launch {
+            val all = movieCats.await()
+            val cats = all.filter { TRENDING_GROUP.containsMatchIn(it.name) }.ifEmpty { all.filter { POPULAR_GROUP.containsMatchIn(it.name) } }.take(2)
+            trending = cats.map { c -> async { limited { orNull { repo.movies(c.id) }.orEmpty() } } }.awaitAll()
+                .flatten().filter { it.poster.isNotBlank() }.distinctBy { it.streamId }.take(40)
+            done("trending")
+        },
+        launch {
+            liveRow = firstFilled(liveCats.await(), want = 1, tries = 3) { repo.channels(it.id) }.firstOrNull()?.let { (c, items) -> c to items.take(20) }
+            done("live")
+        },
+        launch {
+            val got = firstFilled(movieCats.await(), want = 3, tries = 6) { repo.movies(it.id) }
+            got.forEach { recentMovies += it.second }
+            movieRows = got.map { (c, items) -> c to items.sortedByDescending { it.added }.take(24) }
+            done("movies")
+        },
+        launch {
+            val got = firstFilled(seriesCats.await(), want = 2, tries = 4) { repo.series(it.id) }
+            got.forEach { recentSeries += it.second }
+            seriesRows = got.map { (c, items) -> c to items.take(24) }
+            done("series")
+        },
+    ).joinAll()
+    if (trending.isEmpty() && movieRows.isEmpty() && seriesRows.isEmpty() && liveRow == null) {
         throw IllegalStateException("Nothing came back from your provider. Check your connection, then try again.")
     }
-    val trending = trendingLists.awaitAll().flatten().filter { it.poster.isNotBlank() }.distinctBy { it.streamId }.take(40)
-    HomeFeed(heroes, liveRow, movieRows, seriesRows, recent, trending)
+    snapshot()
+}
+
+/** Where the provider's rows would be, when it couldn't be reached: what happened, and Try again. */
+@Composable
+private fun ProviderFailedNote(message: String, edge: Dp, onRetry: () -> Unit) {
+    val isTv = LocalIsTv.current
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = edge, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        ErrorNote(message, Modifier.weight(1f, fill = false))
+        if (isTv) TvButton("Try again", focusKey = "home:retry", onClick = onRetry)
+        else PillButton("Try again", primary = true, onClick = onRetry)
+    }
 }
 
 /** The id Arrange Home uses for the banner at the top. */
@@ -158,7 +224,7 @@ const val FEATURED = "featured"
 private fun rememberHomeFeed(vm: AppViewModel, repo: Repository): androidx.compose.runtime.State<LoadResult<HomeFeed>> {
     LaunchedEffect(repo, vm.reloadToken) { vm.ensureHome() }
     // TMDB's trending films, only for Trending Now when the provider has no Trending group of its own.
-    val noTrendingGroup = (vm.homeFeed as? LoadResult.Ok)?.value?.trending?.isEmpty() == true
+    val noTrendingGroup = (vm.homeFeed as? LoadResult.Ok)?.value?.let { it.trending.isEmpty() && "trending" !in it.loading } == true
     LaunchedEffect(repo, vm.reloadToken, vm.tmdbKey, vm.profile?.id, noTrendingGroup) { if (noTrendingGroup) vm.ensureFeatured() }
     // New Episodes and Because You Watched, worked out alongside.
     LaunchedEffect(repo, vm.reloadToken, vm.vodVersion, vm.lastWatched) { vm.ensureHomeExtras() }
@@ -241,9 +307,14 @@ private fun LazyListScope.homeRows(
     posterWidth: Dp,
     continueWidth: Dp,
     gap: Dp,
+    failed: String? = null,
     onArrange: () -> Unit,
 ) {
     val rowPadding = PaddingValues(horizontal = edge, vertical = 12.dp)
+    // A provider row that's still on its way: a soft placeholder in its place, same size as the row.
+    fun placeholder(key: String) {
+        item(key = key) { SkeletonPosterRow(edge, posterWidth, gap) }
+    }
     // Each row by its id, so they can be shown in the profile's chosen order (Arrange Home).
     val rows = HashMap<String, () -> Unit>()
     // One Sport row: live games first (with the channels showing them), then your teams' other fixtures.
@@ -301,27 +372,31 @@ private fun LazyListScope.homeRows(
     }
     // Once Recently Added; the same spot in Arrange Home, now the films trending on your provider.
     rows["recently-added"] = {
-        val films = feed.trending.ifEmpty {
-            // No Trending group in Films: this week's trending films from TMDB, if it's connected.
-            vm.featured?.let { f -> f.movies.filter { it.streamId in f.trending } }.orEmpty()
-        }
-        if (films.isNotEmpty()) {
-            item(key = "row-trending") {
-                HomeRow("Trending Now", edge) {
-                    LazyRow(contentPadding = rowPadding, horizontalArrangement = Arrangement.spacedBy(gap)) {
-                        items(films, key = { it.streamId }) { m ->
-                            PosterCard(
-                                title = m.name,
-                                image = m.poster,
-                                focusKey = "home:trending:${m.streamId}",
-                                modifier = Modifier.width(posterWidth),
-                                subtitle = ratingLabel(m.rating),
-                                badge = badgeText(m.qualities()),
-                                favourite = vm.favKeys.contains(favouriteKey(ContentType.MOVIE, m.streamId)),
-                                watched = vm.movieWatched(m),
-                                onClick = { vm.push(Screen.MovieDetail(m)) },
-                                onLongClick = { vm.toggleFavourite(vm.favouriteOf(m)) },
-                            )
+        if ("trending" in feed.loading) {
+            placeholder("row-trending")
+        } else {
+            val films = feed.trending.ifEmpty {
+                // No Trending group in Films: this week's trending films from TMDB, if it's connected.
+                vm.featured?.let { f -> f.movies.filter { it.streamId in f.trending } }.orEmpty()
+            }
+            if (films.isNotEmpty()) {
+                item(key = "row-trending") {
+                    HomeRow("Trending Now", edge) {
+                        LazyRow(contentPadding = rowPadding, horizontalArrangement = Arrangement.spacedBy(gap)) {
+                            items(films, key = { it.streamId }) { m ->
+                                PosterCard(
+                                    title = m.name,
+                                    image = m.poster,
+                                    focusKey = "home:trending:${m.streamId}",
+                                    modifier = Modifier.width(posterWidth),
+                                    subtitle = ratingLabel(m.rating),
+                                    badge = badgeText(m.qualities()),
+                                    favourite = vm.favKeys.contains(favouriteKey(ContentType.MOVIE, m.streamId)),
+                                    watched = vm.movieWatched(m),
+                                    onClick = { vm.push(Screen.MovieDetail(m)) },
+                                    onLongClick = { vm.toggleFavourite(vm.favouriteOf(m)) },
+                                )
+                            }
                         }
                     }
                 }
@@ -407,21 +482,25 @@ private fun LazyListScope.homeRows(
         }
     }
     rows["live"] = {
-        val live = feed.liveRow
-        if (live != null) {
-            item(key = "row-live") {
-                HomeRow("Live · ${live.first.name}", edge) {
-                    LazyRow(contentPadding = rowPadding, horizontalArrangement = Arrangement.spacedBy(gap)) {
-                        itemsIndexed(live.second, key = { _, c -> c.streamId }) { i, c ->
-                            ChannelCard(
-                                name = c.name,
-                                logo = c.icon,
-                                repo = vm.repo,
-                                streamId = c.streamId,
-                                focusKey = "home:live:${c.streamId}",
-                                onClick = { vm.push(Screen.PlayLive(live.second, i)) },
-                                onLongClick = { vm.toggleFavourite(vm.favouriteOf(c)) },
-                            )
+        if ("live" in feed.loading) {
+            placeholder("row-live")
+        } else {
+            val live = feed.liveRow
+            if (live != null) {
+                item(key = "row-live") {
+                    HomeRow("Live · ${live.first.name}", edge) {
+                        LazyRow(contentPadding = rowPadding, horizontalArrangement = Arrangement.spacedBy(gap)) {
+                            itemsIndexed(live.second, key = { _, c -> c.streamId }) { i, c ->
+                                ChannelCard(
+                                    name = c.name,
+                                    logo = c.icon,
+                                    repo = vm.repo,
+                                    streamId = c.streamId,
+                                    focusKey = "home:live:${c.streamId}",
+                                    onClick = { vm.push(Screen.PlayLive(live.second, i)) },
+                                    onLongClick = { vm.toggleFavourite(vm.favouriteOf(c)) },
+                                )
+                            }
                         }
                     }
                 }
@@ -429,27 +508,34 @@ private fun LazyListScope.homeRows(
         }
     }
     rows["movies"] = {
-        for ((cat, movies) in feed.movieRows) {
-            item(key = "row-movies-${cat.id}") {
-                HomeRow(cat.name, edge) {
-                    LazyRow(contentPadding = rowPadding, horizontalArrangement = Arrangement.spacedBy(gap)) {
-                        items(movies, key = { it.streamId }) { m ->
-                            PosterCard(
-                                title = m.name,
-                                image = m.poster,
-                                focusKey = "home:m:${cat.id}:${m.streamId}",
-                                modifier = Modifier.width(posterWidth),
-                                subtitle = ratingLabel(m.rating),
-                                badge = badgeText(m.qualities()),
-                                favourite = vm.favKeys.contains(favouriteKey(ContentType.MOVIE, m.streamId)),
-                                watched = vm.movieWatched(m),
-                                onClick = { vm.push(Screen.MovieDetail(m)) },
-                                onLongClick = { vm.toggleFavourite(vm.favouriteOf(m)) },
-                            )
-                        }
-                        // The rest of this category, in Movies.
-                        item(key = "see-all") {
-                            SeeAllCard(posterWidth, "home:m:${cat.id}:all") { vm.openCategory(Tabs.MOVIES, cat.id) }
+        if ("movies" in feed.loading) {
+            placeholder("row-movies-loading")
+        } else if (failed != null) {
+            // The provider couldn't be reached: said where its rows would be, with a way to try again.
+            item(key = "row-provider-failed") { ProviderFailedNote(failed, edge) { vm.reload() } }
+        } else {
+            for ((cat, movies) in feed.movieRows) {
+                item(key = "row-movies-${cat.id}") {
+                    HomeRow(cat.name, edge) {
+                        LazyRow(contentPadding = rowPadding, horizontalArrangement = Arrangement.spacedBy(gap)) {
+                            items(movies, key = { it.streamId }) { m ->
+                                PosterCard(
+                                    title = m.name,
+                                    image = m.poster,
+                                    focusKey = "home:m:${cat.id}:${m.streamId}",
+                                    modifier = Modifier.width(posterWidth),
+                                    subtitle = ratingLabel(m.rating),
+                                    badge = badgeText(m.qualities()),
+                                    favourite = vm.favKeys.contains(favouriteKey(ContentType.MOVIE, m.streamId)),
+                                    watched = vm.movieWatched(m),
+                                    onClick = { vm.push(Screen.MovieDetail(m)) },
+                                    onLongClick = { vm.toggleFavourite(vm.favouriteOf(m)) },
+                                )
+                            }
+                            // The rest of this category, in Movies.
+                            item(key = "see-all") {
+                                SeeAllCard(posterWidth, "home:m:${cat.id}:all") { vm.openCategory(Tabs.MOVIES, cat.id) }
+                            }
                         }
                     }
                 }
@@ -457,24 +543,28 @@ private fun LazyListScope.homeRows(
         }
     }
     rows["series"] = {
-        for ((cat, list) in feed.seriesRows) {
-            item(key = "row-series-${cat.id}") {
-                HomeRow(cat.name, edge) {
-                    LazyRow(contentPadding = rowPadding, horizontalArrangement = Arrangement.spacedBy(gap)) {
-                        items(list, key = { it.seriesId }) { s ->
-                            PosterCard(
-                                title = s.name,
-                                image = s.cover,
-                                focusKey = "home:s:${cat.id}:${s.seriesId}",
-                                modifier = Modifier.width(posterWidth),
-                                badge = badgeText(s.qualities()),
-                                favourite = vm.favKeys.contains(favouriteKey(ContentType.SERIES, s.seriesId)),
-                                onClick = { vm.push(Screen.SeriesDetail(s)) },
-                                onLongClick = { vm.toggleFavourite(vm.favouriteOf(s)) },
-                            )
-                        }
-                        item(key = "see-all") {
-                            SeeAllCard(posterWidth, "home:s:${cat.id}:all") { vm.openCategory(Tabs.SERIES, cat.id) }
+        if ("series" in feed.loading) {
+            placeholder("row-series-loading")
+        } else {
+            for ((cat, list) in feed.seriesRows) {
+                item(key = "row-series-${cat.id}") {
+                    HomeRow(cat.name, edge) {
+                        LazyRow(contentPadding = rowPadding, horizontalArrangement = Arrangement.spacedBy(gap)) {
+                            items(list, key = { it.seriesId }) { s ->
+                                PosterCard(
+                                    title = s.name,
+                                    image = s.cover,
+                                    focusKey = "home:s:${cat.id}:${s.seriesId}",
+                                    modifier = Modifier.width(posterWidth),
+                                    badge = badgeText(s.qualities()),
+                                    favourite = vm.favKeys.contains(favouriteKey(ContentType.SERIES, s.seriesId)),
+                                    onClick = { vm.push(Screen.SeriesDetail(s)) },
+                                    onLongClick = { vm.toggleFavourite(vm.favouriteOf(s)) },
+                                )
+                            }
+                            item(key = "see-all") {
+                                SeeAllCard(posterWidth, "home:s:${cat.id}:all") { vm.openCategory(Tabs.SERIES, cat.id) }
+                            }
                         }
                     }
                 }
@@ -641,25 +731,25 @@ fun HomeSection(vm: AppViewModel) {
     }
     LaunchedEffect(scrolledDown) { vm.homeBarHidden = scrolledDown }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { vm.homeBarHidden = false } }
-    when (val f = feedState) {
-        // The menu floats over the top of Home, so everything but the banner starts below it.
-        is LoadResult.Loading -> Box(Modifier.padding(top = TV_MENU_SPACE)) { SkeletonHome() }
-        is LoadResult.Err -> Box(Modifier.padding(top = TV_MENU_SPACE)) { ErrorView(f.message) { vm.reload() } }
-        is LoadResult.Ok -> {
-            val feed = f.value
-            val entry = LocalHomeEntry.current
-            LazyColumn(
-                state = homeList,
-                contentPadding = PaddingValues(bottom = 48.dp),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(if (entry != null) Modifier.focusRequester(entry.list).focusGroup() else Modifier),
-            ) {
-                // The banner the profile chose: clock and weather, your teams, the holiday, or none.
-                item(key = "banner") { TvTopBanner(vm, repo) }
-                homeRows(vm, feed, edge = 48.dp, posterWidth = 132.dp, continueWidth = 300.dp, gap = 22.dp) { arranging = true }
-            }
-        }
+    // Home is always the page: rows still loading from the provider show a placeholder, and if it
+    // can't be reached, a note where its rows would be. Everything else is there at once.
+    val f = feedState
+    val feed = when (f) {
+        is LoadResult.Ok -> f.value
+        is LoadResult.Loading -> HomeFeed.loadingAll()
+        is LoadResult.Err -> HomeFeed.NONE
+    }
+    val entry = LocalHomeEntry.current
+    LazyColumn(
+        state = homeList,
+        contentPadding = PaddingValues(bottom = 48.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .then(if (entry != null) Modifier.focusRequester(entry.list).focusGroup() else Modifier),
+    ) {
+        // The banner the profile chose: clock and weather, your teams, the holiday, or none.
+        item(key = "banner") { TvTopBanner(vm, repo) }
+        homeRows(vm, feed, edge = 48.dp, posterWidth = 132.dp, continueWidth = 300.dp, gap = 22.dp, failed = (f as? LoadResult.Err)?.message) { arranging = true }
     }
 }
 
@@ -677,21 +767,20 @@ fun PhoneHomeTab(vm: AppViewModel) {
     val pad = LocalContentPadding.current
     var arranging by remember { mutableStateOf(false) }
     if (arranging) ArrangeHomeDialog(vm) { arranging = false }
-    when (val f = feedState) {
-        is LoadResult.Loading -> SkeletonHome()
-        is LoadResult.Err -> ErrorView(f.message) { vm.reload() }
-        is LoadResult.Ok -> {
-            val feed = f.value
-            LazyColumn(
-                state = vm.home.list("phone"),
-                contentPadding = PaddingValues(bottom = pad.calculateBottomPadding() + 8.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                item(key = "banner") { PhoneTopBanner(vm, repo) }
-                // Apple TV app sizes: big wide cards for Continue Watching, roomy posters, 20dp margins.
-                homeRows(vm, feed, edge = 20.dp, posterWidth = 118.dp, continueWidth = 270.dp, gap = 12.dp) { arranging = true }
-            }
-        }
+    val f = feedState
+    val feed = when (f) {
+        is LoadResult.Ok -> f.value
+        is LoadResult.Loading -> HomeFeed.loadingAll()
+        is LoadResult.Err -> HomeFeed.NONE
+    }
+    LazyColumn(
+        state = vm.home.list("phone"),
+        contentPadding = PaddingValues(bottom = pad.calculateBottomPadding() + 8.dp),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        item(key = "banner") { PhoneTopBanner(vm, repo) }
+        // Apple TV app sizes: big wide cards for Continue Watching, roomy posters, 20dp margins.
+        homeRows(vm, feed, edge = 20.dp, posterWidth = 118.dp, continueWidth = 270.dp, gap = 12.dp, failed = (f as? LoadResult.Err)?.message) { arranging = true }
     }
 }
 
