@@ -314,12 +314,24 @@ private fun KickoffDialog(vm: AppViewModel, m: app.embertv.data.Match) {
                 .padding(if (isTv) 24.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // A small scoreboard, like the goal alerts: crest tiles either side of the kick-off time.
+            // The same scoreboard as the live alerts: crests in glass circles either side of the time.
             val mins = ((m.kickoff / 1000 - now) / 60).coerceAtLeast(0)
+            LaunchedEffect(m.id) { vm.lookUpFixtureChannel(m) }
+            val channel = matchChannel(vm, m)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(7.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Ember.Live))
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    if (mins > 0) "KICK-OFF IN $mins MIN" else "KICKING OFF NOW",
+                    style = Txt.Caption.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp),
+                    color = Ember.Live,
+                )
+            }
+            Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 KickoffCrest(m.home.logo, m.home.shortName)
                 Column(Modifier.padding(horizontal = 14.dp).widthIn(max = 130.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(formatClock(m.kickoff / 1000), style = Txt.Title.copy(fontWeight = FontWeight.Bold))
+                    Text(formatClock(m.kickoff / 1000), style = Txt.Title.copy(fontSize = 30.sp, fontWeight = FontWeight.Bold))
                     Spacer(Modifier.height(4.dp))
                     Text(m.league.name, style = Txt.Caption, color = Ember.Faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -328,12 +340,14 @@ private fun KickoffDialog(vm: AppViewModel, m: app.embertv.data.Match) {
             Spacer(Modifier.height(18.dp))
             SheetTitle(
                 "${m.home.shortName} v ${m.away.shortName}",
-                eyebrow = if (mins > 0) "Kick-off in $mins min" else "Kicking off now",
-                subtitle = if (vm.isFollowedMatch(m)) "One of your teams is about to play" else "You asked for a reminder",
+                subtitle = listOfNotNull(
+                    if (vm.isFollowedMatch(m)) "One of your teams is about to play" else "You asked for a reminder",
+                    channel?.let { "On $it" },
+                ).joinToString("  ·  "),
             )
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(22.dp))
             Column(Modifier.width(if (isTv) 340.dp else 400.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SheetOption("Watch", focusKey = "kickoff:watch", autoFocus = isTv, primary = true) { vm.watchKickoff(m) }
+                SheetOption(if (channel != null) "Watch on $channel" else "Watch", focusKey = "kickoff:watch", autoFocus = isTv, primary = true) { vm.watchKickoff(m) }
                 SheetOption("Not now", focusKey = "kickoff:dismiss") { vm.dismissKickoff() }
             }
         }
@@ -344,10 +358,11 @@ private fun KickoffDialog(vm: AppViewModel, m: app.embertv.data.Match) {
 private fun KickoffCrest(logo: String, name: String) {
     Column(Modifier.width(92.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            Modifier.size(72.dp).glassSurface(RoundedCornerShape(18.dp), Color(0x14FFFFFF)),
+            Modifier.size(72.dp).glassSurface(androidx.compose.foundation.shape.CircleShape, Color(0x1AFFFFFF)),
             contentAlignment = Alignment.Center,
         ) {
-            NetImage(logo, Modifier.fillMaxSize().padding(12.dp), ContentScale.Fit)
+            if (logo.isNotBlank()) NetImage(logo, Modifier.fillMaxSize().padding(14.dp), ContentScale.Fit)
+            else Text(name.take(3).uppercase(), style = Txt.Headline.copy(fontWeight = FontWeight.Bold))
         }
         Spacer(Modifier.height(8.dp))
         Text(name, style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = Ember.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)

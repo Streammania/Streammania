@@ -6,6 +6,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.layout.Arrangement
@@ -331,7 +333,12 @@ private fun CardTeam(t: TeamScore, state: MatchState, color: Color) {
 
 // ---------------- Goal alerts ----------------
 
-/** A banner at the top for kick-offs, goals and full time, over whatever's on. Doesn't take focus. */
+/**
+ * A live alert at the top for kick-offs, goals and full time, over whatever's on, in the style of
+ * Apple Sports' live scores: the app's icon and a red LIVE with the minute, big crests either side
+ * of the score, and a line saying what happened. The side that scored lights up. On the TV it never
+ * takes the highlight from what you're doing; on a phone, a tap opens the game.
+ */
 @Composable
 fun BoxScope.TeamAlertBanner(vm: AppViewModel) {
     val alert = vm.teamAlert
@@ -346,8 +353,8 @@ fun BoxScope.TeamAlertBanner(vm: AppViewModel) {
     val isTv = LocalIsTv.current
     AnimatedVisibility(
         visible = alert != null,
-        enter = slideInVertically { -it * 2 },
-        exit = fadeOut(),
+        enter = slideInVertically(androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 380f)) { -it * 2 } + androidx.compose.animation.fadeIn(),
+        exit = fadeOut() + androidx.compose.animation.slideOutVertically { -it },
         modifier = Modifier
             .align(if (isTv) Alignment.TopEnd else Alignment.TopCenter)
             .windowInsetsPadding(WindowInsets.statusBars)
@@ -355,59 +362,123 @@ fun BoxScope.TeamAlertBanner(vm: AppViewModel) {
     ) {
         val a = shown[0] ?: return@AnimatedVisibility
         val m = a.match
-        val title = when (a.kind) {
-            TeamAlert.Kind.GOAL -> if (a.good == false) "Goal against" else "GOAL!"
-            TeamAlert.Kind.KICK_OFF -> "Kick-off"
-            TeamAlert.Kind.FULL_TIME -> "Full time"
+        val followed = vm.followedTeams.map { it.id }.toSet()
+        val oursHome = m.home.id in followed
+        // Which side the goal was for: yours if it was good news, else the other one.
+        val scoredHome: Boolean? = if (a.kind != TeamAlert.Kind.GOAL) null else if (a.good != false) oursHome else !oursHome
+        val scorer = when (scoredHome) {
+            true -> m.home.shortName
+            false -> m.away.shortName
+            null -> ""
         }
-        // Apple style: a frosted notification card. A small pill says what happened (white for your
-        // team's goal), then a mini scoreboard, then the competition.
         val ourGoal = a.kind == TeamAlert.Kind.GOAL && a.good != false
+        val homeScore = m.home.score.toIntOrNull()
+        val awayScore = m.away.score.toIntOrNull()
+        val (headline, line) = when (a.kind) {
+            TeamAlert.Kind.GOAL -> "GOAL" to (if (ourGoal) "Goal for $scorer!" else "$scorer scored")
+            TeamAlert.Kind.KICK_OFF -> "KICK-OFF" to "${m.home.shortName} v ${m.away.shortName} has started"
+            TeamAlert.Kind.FULL_TIME -> "FULL TIME" to when {
+                homeScore == null || awayScore == null -> "${m.home.shortName} v ${m.away.shortName}"
+                homeScore == awayScore -> "It finished level"
+                (homeScore > awayScore) -> "${m.home.shortName} win"
+                else -> "${m.away.shortName} win"
+            }
+        }
         Column(
             Modifier
-                .width(if (isTv) 400.dp else 340.dp)
-                .glassSurface(RoundedCornerShape(22.dp), Color(0xE0141418))
-                .border(if (ourGoal) 1.5.dp else 0.dp, if (ourGoal) Color(0xCCFFFFFF) else Color.Transparent, RoundedCornerShape(22.dp))
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .width(if (isTv) 420.dp else 360.dp)
+                .liquidGlass(RoundedCornerShape(26.dp))
+                .then(if (ourGoal) Modifier.border(1.5.dp, Color(0xB3FFFFFF), RoundedCornerShape(26.dp)) else Modifier)
+                .then(
+                    if (isTv) Modifier
+                    else Modifier.clickable {
+                        vm.dismissTeamAlert(a)
+                        vm.watchKickoff(m)
+                    }
+                )
+                .padding(horizontal = 18.dp, vertical = 14.dp),
         ) {
+            // Who's telling you, and how far in: like a notification's header.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(app.embertv.R.drawable.brand_mark),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp).clip(RoundedCornerShape(5.dp)),
+                )
+                Spacer(Modifier.width(7.dp))
+                Text("STREAMMANIA", style = Txt.Caption.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.8.sp), color = Ember.Dim)
+                Spacer(Modifier.weight(1f))
+                if (m.state == MatchState.LIVE) {
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(Ember.Live))
+                    Spacer(Modifier.width(6.dp))
+                    Text("LIVE  ${m.status}", style = Txt.Caption.copy(fontWeight = FontWeight.Bold), color = Ember.Live)
+                } else {
+                    Text(m.status.ifBlank { "FT" }, style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = Ember.Dim)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            // The scoreboard: crests either side, the side that scored lit up.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AlertSide(m.home.logo, m.home.shortName, Modifier.weight(1f))
+                ScoreDigit(m.home.score, lit = scoredHome == true)
+                Text("–", style = Txt.Title.copy(fontSize = 26.sp, fontWeight = FontWeight.Bold), color = Ember.Dim, modifier = Modifier.padding(horizontal = 10.dp))
+                ScoreDigit(m.away.score, lit = scoredHome == false)
+                AlertSide(m.away.logo, m.away.shortName, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(12.dp))
+            // What happened.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(7.dp))
                         .background(if (ourGoal) Color.White else Color(0x24FFFFFF))
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
-                    Text(
-                        title.uppercase(),
-                        style = Txt.Caption.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp),
-                        color = if (ourGoal) Color.Black else Ember.Text,
-                    )
+                    Text(headline, style = Txt.Caption.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp), color = if (ourGoal) Color.Black else Ember.Text)
                 }
-                Spacer(Modifier.width(8.dp))
-                if (m.state == MatchState.LIVE) {
-                    Box(Modifier.size(6.dp).clip(CircleShape).background(Ember.Live))
-                    Spacer(Modifier.width(5.dp))
-                    Text(m.status, style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = Ember.Text)
-                }
-                Spacer(Modifier.weight(1f))
-                Text(m.league.name, style = Txt.Caption, color = Ember.Faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.width(9.dp))
+                Text(line, style = Txt.Label.copy(fontWeight = FontWeight.SemiBold), color = Ember.Text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(m.league.name, style = Txt.Caption, color = Ember.Faint, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 8.dp).widthIn(max = 130.dp))
             }
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(26.dp)) { NetImage(m.home.logo, Modifier.fillMaxSize(), ContentScale.Fit) }
-                Spacer(Modifier.width(8.dp))
-                Text(m.home.shortName, style = Txt.Label.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Text(
-                    "${m.home.score} – ${m.away.score}",
-                    style = Txt.Title.copy(fontWeight = FontWeight.Bold),
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                )
-                Text(m.away.shortName, style = Txt.Label.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = Modifier.weight(1f))
-                Spacer(Modifier.width(8.dp))
-                Box(Modifier.size(26.dp)) { NetImage(m.away.logo, Modifier.fillMaxSize(), ContentScale.Fit) }
+            if (!isTv && m.state == MatchState.LIVE) {
+                Text("Tap to watch", style = Txt.Caption, color = Ember.Faint, modifier = Modifier.padding(top = 8.dp))
             }
         }
     }
+}
+
+/** One side of the alert's scoreboard: the crest in a glass circle, the short name under it. */
+@Composable
+private fun AlertSide(logo: String, name: String, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(46.dp).glassSurface(CircleShape, Color(0x1AFFFFFF)), contentAlignment = Alignment.Center) {
+            if (logo.isNotBlank()) NetImage(logo, Modifier.fillMaxSize().padding(8.dp), ContentScale.Fit)
+            else Text(name.take(3).uppercase(), style = Txt.Caption.copy(fontWeight = FontWeight.Bold))
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(name, style = Txt.Caption.copy(fontWeight = FontWeight.SemiBold), color = Ember.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** A score, big; the side that just scored glows white and grows for a moment. */
+@Composable
+private fun ScoreDigit(score: String, lit: Boolean) {
+    val grow = remember { androidx.compose.animation.core.Animatable(if (lit) 1.35f else 1f) }
+    LaunchedEffect(lit, score) {
+        if (lit) {
+            grow.snapTo(1.35f)
+            grow.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 220f))
+        }
+    }
+    Text(
+        score.ifBlank { "0" },
+        style = Txt.Title.copy(fontSize = 34.sp, fontWeight = FontWeight.Bold),
+        color = if (lit) Color.White else Ember.Text.copy(alpha = 0.85f),
+        modifier = Modifier.graphicsLayer {
+            scaleX = grow.value
+            scaleY = grow.value
+        },
+    )
 }
 
 // ---------------- Where's it on? ----------------

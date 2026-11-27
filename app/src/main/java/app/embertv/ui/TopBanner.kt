@@ -515,7 +515,7 @@ private fun TvWeatherPanel(weather: WeatherNow?, place: WeatherPlace?) {
 }
 
 /** The channel showing a game: found live, or looked up from the guide ahead of time. */
-private fun matchChannel(vm: AppViewModel, m: Match): String? =
+internal fun matchChannel(vm: AppViewModel, m: Match): String? =
     vm.liveSport.firstOrNull { it.match.id == m.id }?.hits?.firstOrNull()?.channel?.name?.let { channelParts(it).first }
         ?: vm.fixtureChannels[m.id]?.ifEmpty { null }
 
